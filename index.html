@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Bleed Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            padding: 30px;
+            min-height: 800px;
+            min-width: 0;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding-right: 20px;
+            border-right: 1px solid #e0e0e0;
+            min-width: 0;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            color: #333;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .control-group input[type="file"],
+        .control-group input[type="number"],
+        .control-group input[type="text"] {
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        .control-group input[type="file"] {
+            padding: 8px;
+            cursor: pointer;
+        }
+
+        .control-group input[type="number"]:focus,
+        .control-group input[type="text"]:focus,
+        .control-group input[type="file"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .input-hint {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-direction: column;
+        }
+
+        button {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+            border: 2px solid #e0e0e0;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #eee;
+            border-color: #667eea;
+        }
+
+        .status {
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            text-align: center;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        /* Main content area */
+        .main {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            min-width: 0;
+        }
+
+        .preview-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .preview-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Mini thumbnails row */
+        .thumbnails-container {
+            background: #f5f5f5;
+            border-radius: 6px;
+            padding: 12px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            display: flex;
+            gap: 10px;
+            min-height: 120px;
+        }
+
+        .thumbnail {
+            flex-shrink: 0;
+            width: 100px;
+            height: 100px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            overflow: hidden;
+            transition: all 0.2s;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: white;
+        }
+
+        .thumbnail.active {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .thumbnail:hover {
+            border-color: #667eea;
+        }
+
+        /* Main preview */
+        .preview-canvas-container {
+            background: #f5f5f5;
+            border-radius: 6px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            min-height: 500px;
+        }
+
+        .preview-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-top: 12px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-label {
+            color: #999;
+            font-weight: 600;
+        }
+
+        .info-value {
+            color: #333;
+            font-weight: 500;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #999;
+            padding: 40px 20px;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        /* Scrollbar styling */
+        .thumbnails-container::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .thumbnails-container::-webkit-scrollbar-track {
+            background: #e0e0e0;
+            border-radius: 3px;
+        }
+
+        .thumbnails-container::-webkit-scrollbar-thumb {
+            background: #999;
+            border-radius: 3px;
+        }
+
+        .thumbnails-container::-webkit-scrollbar-thumb:hover {
+            background: #666;
+        }
+
+        .dpi-auto-detect {
+            font-size: 11px;
+            color: #667eea;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        .comparison-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+            min-width: 0;
+            max-width: 100%;
+            width: 100%;
+        }
+
+        .comparison-item {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .comparison-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .comparison-canvas-container {
+            background: #f5f5f5;
+            border-radius: 6px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 300px;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .comparison-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 4px;
+        }
+
+        @media (max-width: 1024px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                border-right: none;
+                border-bottom: 1px solid #e0e0e0;
+                padding-right: 0;
+                padding-bottom: 20px;
+            }
+
+            .comparison-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .loading {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Card Bleed Generator</h1>
+        </header>
+
+        <div class="content">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="control-group">
+                    <label for="imageInput">Upload Images</label>
+                    <input type="file" id="imageInput" multiple accept="image/*">
+                    <div class="input-hint">Select one or multiple card images</div>
+                </div>
+
+                <div class="control-group">
+                    <label for="cardWidthInput">Card Width (mm)</label>
+                    <input type="number" id="cardWidthInput" value="63" min="1" max="200" step="0.1">
+                    <div class="input-hint">Standard: 63mm</div>
+                </div>
+
+                <div class="control-group">
+                    <label for="cardHeightInput">Card Height (mm)</label>
+                    <input type="number" id="cardHeightInput" value="88" min="1" max="200" step="0.1">
+                    <div class="input-hint">Standard: 88mm</div>
+                </div>
+
+                <div class="control-group">
+                    <label for="bleedInput">Bleed Amount (mm)</label>
+                    <input type="number" id="bleedInput" value="2" min="0.1" max="50" step="0.1">
+                    <div class="input-hint">Distance to extend edges</div>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn-secondary" id="downloadBtn" disabled>Download Current Card</button>
+                    <button class="btn-secondary" id="downloadAllBtn" disabled>Download All Cards</button>
+                </div>
+
+                <div class="status info" id="status">
+                    👋 Upload images to get started
+                </div>
+            </div>
+
+            <!-- Main content -->
+            <div class="main">
+                <div class="preview-section">
+                    <div class="preview-title">Uploaded Cards</div>
+                    <div class="thumbnails-container" id="thumbnailsContainer">
+                        <div class="empty-state" style="width: 100%; justify-content: center;">
+                            <div class="empty-state-icon">📁</div>
+                            <div>No images uploaded yet</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="preview-section">
+                    <div class="preview-title">Comparison</div>
+                    <div class="comparison-container" id="comparisonContainer">
+                        <div class="comparison-item">
+                            <div class="comparison-label">Original</div>
+                            <div class="comparison-canvas-container" id="originalContainer">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">📋</div>
+                                    <div>Select a card</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="comparison-item">
+                            <div class="comparison-label">With Bleed</div>
+                            <div class="comparison-canvas-container" id="processedContainer">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">✨</div>
+                                    <div>Processing...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="info-grid" id="infoGrid" style="display: none;">
+                        <div class="info-item">
+                            <span class="info-label">Original Size</span>
+                            <span class="info-value" id="originalSize">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Bleed Size</span>
+                            <span class="info-value" id="bleedSize">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Original (px)</span>
+                            <span class="info-value" id="originalPixels">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">With Bleed (px)</span>
+                            <span class="info-value" id="bleedPixels">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Store uploaded images and processed results
+        const state = {
+            images: [], // { file, canvas, processed }
+            selectedIndex: 0,
+            dpiDetected: false,
+            processedCards: {}
+        };
+
+        const elements = {
+            imageInput: document.getElementById('imageInput'),
+            cardWidthInput: document.getElementById('cardWidthInput'),
+            cardHeightInput: document.getElementById('cardHeightInput'),
+            bleedInput: document.getElementById('bleedInput'),
+            downloadBtn: document.getElementById('downloadBtn'),
+            downloadAllBtn: document.getElementById('downloadAllBtn'),
+            status: document.getElementById('status'),
+            thumbnailsContainer: document.getElementById('thumbnailsContainer'),
+            originalContainer: document.getElementById('originalContainer'),
+            processedContainer: document.getElementById('processedContainer'),
+            infoGrid: document.getElementById('infoGrid')
+        };
+
+        const DEFAULT_DPI = 300;
+
+        // Handle image upload
+        elements.imageInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+
+            state.images = [];
+            state.selectedIndex = 0;
+            state.processedCards = {};
+
+            updateStatus('Loading images...', 'info');
+
+            for (const file of files) {
+                const canvas = await imageToCanvas(file);
+                if (canvas) {
+                    state.images.push({ file, canvas, processed: null });
+                }
+            }
+
+            if (state.images.length > 0) {
+                // Try to detect DPI from first image
+                await detectDPI(state.images[0].canvas);
+                renderThumbnails();
+                selectCard(0);
+                elements.downloadBtn.disabled = false;
+                elements.downloadAllBtn.disabled = false;
+                updateStatus(`Loaded ${state.images.length} image(s)`, 'success');
+            } else {
+                updateStatus('Failed to load images', 'error');
+            }
+        });
+
+        // Convert image file to canvas
+        function imageToCanvas(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        resolve(canvas);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Detect DPI from image metadata (simplified - uses default)
+        async function detectDPI(canvas) {
+            // Using standard print DPI of 300
+            // No longer user-configurable
+        }
+
+        // Render thumbnail previews
+        function renderThumbnails() {
+            elements.thumbnailsContainer.innerHTML = '';
+
+            if (state.images.length === 0) {
+                elements.thumbnailsContainer.innerHTML = `
+                    <div class="empty-state" style="width: 100%; justify-content: center;">
+                        <div class="empty-state-icon">📁</div>
+                        <div>No images uploaded yet</div>
+                    </div>
+                `;
+                return;
+            }
+
+            state.images.forEach((img, index) => {
+                const thumbnail = document.createElement('div');
+                thumbnail.className = 'thumbnail' + (index === state.selectedIndex ? ' active' : '');
+                
+                const canvas = document.createElement('canvas');
+                const size = 100;
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+
+                // Scale down image to fit thumbnail
+                const scale = Math.min(size / img.canvas.width, size / img.canvas.height);
+                const scaledW = img.canvas.width * scale;
+                const scaledH = img.canvas.height * scale;
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, size, size);
+                ctx.drawImage(img.canvas, (size - scaledW) / 2, (size - scaledH) / 2, scaledW, scaledH);
+
+                thumbnail.addEventListener('click', () => selectCard(index));
+                
+                const dataUrl = canvas.toDataURL();
+                thumbnail.innerHTML = `<img src="${dataUrl}" alt="Card ${index + 1}">`;
+                
+                elements.thumbnailsContainer.appendChild(thumbnail);
+            });
+        }
+
+        // Select a card and update preview
+        function selectCard(index) {
+            state.selectedIndex = index;
+            renderThumbnails();
+            updatePreviews();
+        }
+
+        // Update both original and processed previews
+        async function updatePreviews() {
+            const img = state.images[state.selectedIndex];
+            if (!img) return;
+
+            updateOriginalPreview();
+            updateProcessedPreview();
+            updateInfoGrid();
+        }
+
+        // Show original image preview
+        function updateOriginalPreview() {
+            const img = state.images[state.selectedIndex];
+            if (!img) return;
+
+            elements.originalContainer.innerHTML = '';
+
+            const canvas = document.createElement('canvas');
+            const maxWidth = elements.originalContainer.offsetWidth - 24;
+            const maxHeight = elements.originalContainer.offsetHeight - 24;
+
+            const scale = Math.min(maxWidth / img.canvas.width, maxHeight / img.canvas.height);
+            canvas.width = img.canvas.width * scale;
+            canvas.height = img.canvas.height * scale;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img.canvas, 0, 0, canvas.width, canvas.height);
+
+            canvas.className = 'comparison-canvas';
+            elements.originalContainer.appendChild(canvas);
+        }
+
+        // Process and show processed preview
+        async function updateProcessedPreview() {
+            const img = state.images[state.selectedIndex];
+            if (!img) return;
+
+            const cardWidthMm = parseFloat(elements.cardWidthInput.value) || 63;
+            const cardHeightMm = parseFloat(elements.cardHeightInput.value) || 88;
+            const bleedMm = parseFloat(elements.bleedInput.value) || 0;
+            const bleedPx = Math.round(mmToPixels(bleedMm, cardWidthMm, cardHeightMm, img.canvas.width, img.canvas.height));
+
+            try {
+                const processedCanvas = addBleedToCard(img.canvas, bleedPx);
+                state.images[state.selectedIndex].processed = processedCanvas;
+                state.processedCards[state.selectedIndex] = processedCanvas;
+
+                elements.processedContainer.innerHTML = '';
+
+                const canvas = document.createElement('canvas');
+                const maxWidth = elements.processedContainer.offsetWidth - 24;
+                const maxHeight = elements.processedContainer.offsetHeight - 24;
+
+                const scale = Math.min(maxWidth / processedCanvas.width, maxHeight / processedCanvas.height);
+                canvas.width = processedCanvas.width * scale;
+                canvas.height = processedCanvas.height * scale;
+
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(processedCanvas, 0, 0, canvas.width, canvas.height);
+
+                canvas.className = 'comparison-canvas';
+                elements.processedContainer.appendChild(canvas);
+
+                elements.downloadBtn.disabled = false;
+            } catch (error) {
+                updateStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Update info grid
+        function updateInfoGrid() {
+            const img = state.images[state.selectedIndex];
+            if (!img) return;
+
+            const cardWidthMm = parseFloat(elements.cardWidthInput.value) || 63;
+            const cardHeightMm = parseFloat(elements.cardHeightInput.value) || 88;
+            const bleedMm = parseFloat(elements.bleedInput.value) || 0;
+            const bleedPx = mmToPixels(bleedMm, cardWidthMm, cardHeightMm, img.canvas.width, img.canvas.height);
+
+            document.getElementById('originalSize').textContent = `${img.canvas.width} × ${img.canvas.height}`;
+            document.getElementById('bleedSize').textContent = `${bleedMm}mm (${Math.round(bleedPx)}px)`;
+            document.getElementById('originalPixels').textContent = `${img.canvas.width} × ${img.canvas.height}`;
+            document.getElementById('bleedPixels').textContent = 
+                `${img.canvas.width + 2*Math.round(bleedPx)} × ${img.canvas.height + 2*Math.round(bleedPx)}`;
+
+            elements.infoGrid.style.display = 'grid';
+        }
+
+        // Convert mm to pixels based on card dimensions
+        function mmToPixels(mm, cardWidthMm, cardHeightMm, imageWidth, imageHeight) {
+            // Calculate pixels per mm for width and height
+            const pxPerMmWidth = imageWidth / cardWidthMm;
+            const pxPerMmHeight = imageHeight / cardHeightMm;
+            
+            // Use average of both ratios for consistent scaling
+            const avgPxPerMm = (pxPerMmWidth + pxPerMmHeight) / 2;
+            return mm * avgPxPerMm;
+        }
+
+        // Process selected card with bleed
+        async function autoProcess() {
+            const img = state.images[state.selectedIndex];
+            if (!img) return;
+
+            const cardWidthMm = parseFloat(elements.cardWidthInput.value) || 63;
+            const cardHeightMm = parseFloat(elements.cardHeightInput.value) || 88;
+            const bleedMm = parseFloat(elements.bleedInput.value) || 0;
+            const bleedPx = Math.round(mmToPixels(bleedMm, cardWidthMm, cardHeightMm, img.canvas.width, img.canvas.height));
+
+            try {
+                const processedCanvas = addBleedToCard(img.canvas, bleedPx);
+                state.images[state.selectedIndex].processed = processedCanvas;
+                state.processedCards[state.selectedIndex] = processedCanvas;
+
+                await updateProcessedPreview();
+            } catch (error) {
+                updateStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Add bleed to card by extending edge gradients
+        function addBleedToCard(sourceCanvas, bleedPx) {
+            const w = sourceCanvas.width;
+            const h = sourceCanvas.height;
+            const totalW = w + 2 * bleedPx;
+            const totalH = h + 2 * bleedPx;
+
+            const outputCanvas = document.createElement('canvas');
+            outputCanvas.width = totalW;
+            outputCanvas.height = totalH;
+            const ctx = outputCanvas.getContext('2d');
+
+            const sourceCtx = sourceCanvas.getContext('2d');
+            const sourceImageData = sourceCtx.getImageData(0, 0, w, h);
+            const sourceData = sourceImageData.data;
+
+            // Create output image data
+            const outputImageData = ctx.createImageData(totalW, totalH);
+            const outputData = outputImageData.data;
+
+            // Initialize with transparent
+            for (let i = 0; i < outputData.length; i += 4) {
+                outputData[i + 3] = 0; // alpha = 0
+            }
+
+            // Place original image in center
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const srcIdx = (y * w + x) * 4;
+                    const destIdx = ((y + bleedPx) * totalW + (x + bleedPx)) * 4;
+                    outputData[destIdx] = sourceData[srcIdx];
+                    outputData[destIdx + 1] = sourceData[srcIdx + 1];
+                    outputData[destIdx + 2] = sourceData[srcIdx + 2];
+                    outputData[destIdx + 3] = sourceData[srcIdx + 3];
+                }
+            }
+
+            // Extend top edge
+            for (let y = 0; y < bleedPx; y++) {
+                for (let x = bleedPx; x < w + bleedPx; x++) {
+                    const gradient = extendPixel(sourceData, w, h, x - bleedPx, 0, 0, -1, y);
+                    const idx = (y * totalW + x) * 4;
+                    outputData[idx] = gradient.r;
+                    outputData[idx + 1] = gradient.g;
+                    outputData[idx + 2] = gradient.b;
+                    outputData[idx + 3] = gradient.a;
+                }
+            }
+
+            // Extend bottom edge
+            for (let y = h + bleedPx; y < totalH; y++) {
+                for (let x = bleedPx; x < w + bleedPx; x++) {
+                    const gradient = extendPixel(sourceData, w, h, x - bleedPx, h - 1, 0, 1, y - (h + bleedPx));
+                    const idx = (y * totalW + x) * 4;
+                    outputData[idx] = gradient.r;
+                    outputData[idx + 1] = gradient.g;
+                    outputData[idx + 2] = gradient.b;
+                    outputData[idx + 3] = gradient.a;
+                }
+            }
+
+            // Extend left edge
+            for (let y = bleedPx; y < h + bleedPx; y++) {
+                for (let x = 0; x < bleedPx; x++) {
+                    const gradient = extendPixel(sourceData, w, h, 0, y - bleedPx, -1, 0, x);
+                    const idx = (y * totalW + x) * 4;
+                    outputData[idx] = gradient.r;
+                    outputData[idx + 1] = gradient.g;
+                    outputData[idx + 2] = gradient.b;
+                    outputData[idx + 3] = gradient.a;
+                }
+            }
+
+            // Extend right edge
+            for (let y = bleedPx; y < h + bleedPx; y++) {
+                for (let x = w + bleedPx; x < totalW; x++) {
+                    const gradient = extendPixel(sourceData, w, h, w - 1, y - bleedPx, 1, 0, x - (w + bleedPx));
+                    const idx = (y * totalW + x) * 4;
+                    outputData[idx] = gradient.r;
+                    outputData[idx + 1] = gradient.g;
+                    outputData[idx + 2] = gradient.b;
+                    outputData[idx + 3] = gradient.a;
+                }
+            }
+
+            // Handle corners by blending adjacent bleeds
+            // Top-left corner
+            for (let y = 0; y < bleedPx; y++) {
+                for (let x = 0; x < bleedPx; x++) {
+                    const topGrad = extendPixel(sourceData, w, h, 0, 0, -1, 0, y);
+                    const leftGrad = extendPixel(sourceData, w, h, 0, 0, 0, -1, x);
+                    const blended = blendCorner(topGrad, leftGrad);
+                    const idx = (y * totalW + x) * 4;
+                    outputData[idx] = blended.r;
+                    outputData[idx + 1] = blended.g;
+                    outputData[idx + 2] = blended.b;
+                    outputData[idx + 3] = blended.a;
+                }
+            }
+
+            // Top-right corner
+            for (let y = 0; y < bleedPx; y++) {
+                for (let x = w + bleedPx; x < totalW; x++) {
+                    const topGrad = extendPixel(sourceData, w, h, w - 1, 0, -1, 0, y);
+                    const rightGrad = extendPixel(sourceData, w, h, w - 1, 0, 0, 1, x - (w + bleedPx));
+                    const blended = blendCorner(topGrad, rightGrad);
+                    const idx = (y * totalW + x) * 4;
+                    outputData[idx] = blended.r;
+                    outputData[idx + 1] = blended.g;
+                    outputData[idx + 2] = blended.b;
+                    outputData[idx + 3] = blended.a;
+                }
+            }
+
+            // Bottom-left corner
+            for (let y = h + bleedPx; y < totalH; y++) {
+                for (let x = 0; x < bleedPx; x++) {
+                    const bottomGrad = extendPixel(sourceData, w, h, 0, h - 1, 1, 0, y - (h + bleedPx));
+                    const leftGrad = extendPixel(sourceData, w, h, 0, h - 1, 0, -1, x);
+                    const blended = blendCorner(bottomGrad, leftGrad);
+                    const idx = (y * totalW + x) * 4;
+                    outputData[idx] = blended.r;
+                    outputData[idx + 1] = blended.g;
+                    outputData[idx + 2] = blended.b;
+                    outputData[idx + 3] = blended.a;
+                }
+            }
+
+            // Bottom-right corner
+            for (let y = h + bleedPx; y < totalH; y++) {
+                for (let x = w + bleedPx; x < totalW; x++) {
+                    const bottomGrad = extendPixel(sourceData, w, h, w - 1, h - 1, 1, 0, y - (h + bleedPx));
+                    const rightGrad = extendPixel(sourceData, w, h, w - 1, h - 1, 0, 1, x - (w + bleedPx));
+                    const blended = blendCorner(bottomGrad, rightGrad);
+                    const idx = (y * totalW + x) * 4;
+                    outputData[idx] = blended.r;
+                    outputData[idx + 1] = blended.g;
+                    outputData[idx + 2] = blended.b;
+                    outputData[idx + 3] = blended.a;
+                }
+            }
+
+            ctx.putImageData(outputImageData, 0, 0);
+            return outputCanvas;
+        }
+
+        // Get pixel from source data with bounds checking
+        function getPixel(data, w, h, x, y) {
+            if (x < 0 || x >= w || y < 0 || y >= h) {
+                return { r: 255, g: 255, b: 255, a: 255 };
+            }
+            const idx = (y * w + x) * 4;
+            return {
+                r: data[idx],
+                g: data[idx + 1],
+                b: data[idx + 2],
+                a: data[idx + 3]
+            };
+        }
+
+        // Calculate gradient direction and extend pixel
+        function extendPixel(data, w, h, x, y, dirX, dirY, distance) {
+            // Get pixel at edge and its neighbor to calculate gradient
+            const edgePixel = getPixel(data, w, h, x, y);
+            const neighborX = Math.max(0, Math.min(w - 1, x + dirX));
+            const neighborY = Math.max(0, Math.min(h - 1, y + dirY));
+            const neighbor = getPixel(data, w, h, neighborX, neighborY);
+
+            // Calculate gradient
+            const gradR = edgePixel.r - neighbor.r;
+            const gradG = edgePixel.g - neighbor.g;
+            const gradB = edgePixel.b - neighbor.b;
+            const gradA = edgePixel.a - neighbor.a;
+
+            // Apply gradient over distance with falloff
+            const falloff = Math.max(0, 1 - distance * 0.15);
+
+            return {
+                r: Math.max(0, Math.min(255, Math.round(edgePixel.r + gradR * falloff * 0.5))),
+                g: Math.max(0, Math.min(255, Math.round(edgePixel.g + gradG * falloff * 0.5))),
+                b: Math.max(0, Math.min(255, Math.round(edgePixel.b + gradB * falloff * 0.5))),
+                a: Math.max(0, Math.min(255, Math.round(edgePixel.a + gradA * falloff * 0.3)))
+            };
+        }
+
+        // Blend two gradient pixels at corners
+        function blendCorner(grad1, grad2) {
+            return {
+                r: Math.round((grad1.r + grad2.r) / 2),
+                g: Math.round((grad1.g + grad2.g) / 2),
+                b: Math.round((grad1.b + grad2.b) / 2),
+                a: Math.round((grad1.a + grad2.a) / 2)
+            };
+        }
+
+        // Show preview with bleed
+        function updatePreviewWithBleed(processedCanvas) {
+            elements.previewContainer.innerHTML = '';
+
+            const canvas = document.createElement('canvas');
+            const maxWidth = elements.previewContainer.offsetWidth - 40;
+            const maxHeight = elements.previewContainer.offsetHeight - 40;
+
+            const scale = Math.min(maxWidth / processedCanvas.width, maxHeight / processedCanvas.height);
+            canvas.width = processedCanvas.width * scale;
+            canvas.height = processedCanvas.height * scale;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(processedCanvas, 0, 0, canvas.width, canvas.height);
+
+            canvas.className = 'preview-canvas';
+            elements.previewContainer.appendChild(canvas);
+        }
+
+        // Download current processed card
+        elements.downloadBtn.addEventListener('click', () => {
+            const processed = state.images[state.selectedIndex]?.processed;
+            if (!processed) {
+                updateStatus('No processed card to download', 'error');
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = processed.toDataURL();
+            link.download = `card-with-bleed-${state.selectedIndex + 1}.png`;
+            link.click();
+
+            updateStatus('Card downloaded!', 'success');
+        });
+
+        // Download all processed cards
+        elements.downloadAllBtn.addEventListener('click', async () => {
+            const toProcess = state.images.filter((img, idx) => !state.processedCards[idx]);
+
+            if (toProcess.length > 0) {
+                updateStatus(`Processing ${toProcess.length} remaining card(s)...`, 'info');
+                elements.downloadAllBtn.disabled = true;
+
+                const cardWidthMm = parseFloat(elements.cardWidthInput.value) || 63;
+                const cardHeightMm = parseFloat(elements.cardHeightInput.value) || 88;
+                const bleedMm = parseFloat(elements.bleedInput.value) || 0;
+
+                for (let i = 0; i < state.images.length; i++) {
+                    if (!state.processedCards[i]) {
+                        const bleedPx = Math.round(mmToPixels(bleedMm, cardWidthMm, cardHeightMm, state.images[i].canvas.width, state.images[i].canvas.height));
+                        const processedCanvas = addBleedToCard(state.images[i].canvas, bleedPx);
+                        state.processedCards[i] = processedCanvas;
+                    }
+                }
+            }
+
+            // Create ZIP file with all processed cards
+            try {
+                const zip = new JSZip();
+                
+                for (let i = 0; i < state.images.length; i++) {
+                    const canvas = state.processedCards[i];
+                    if (canvas) {
+                        const dataUrl = canvas.toDataURL('image/png');
+                        const base64 = dataUrl.split(',')[1];
+                        zip.file(`card-with-bleed-${i + 1}.png`, base64, { base64: true });
+                    }
+                }
+
+                const blob = await zip.generateAsync({ type: 'blob' });
+                saveAs(blob, 'cards-with-bleed.zip');
+
+                elements.downloadAllBtn.disabled = false;
+                updateStatus(`All ${state.images.length} card(s) downloaded as ZIP!`, 'success');
+            } catch (error) {
+                updateStatus(`Error creating ZIP: ${error.message}`, 'error');
+                elements.downloadAllBtn.disabled = false;
+            }
+        });
+
+        // Update status message
+        function updateStatus(message, type = 'info') {
+            elements.status.textContent = message;
+            elements.status.className = `status ${type}`;
+        }
+
+        // Update when bleed/DPI/card dimensions change
+        elements.bleedInput.addEventListener('change', () => {
+            // Clear cached processed cards to force reprocessing with new bleed
+            state.processedCards = {};
+            state.images.forEach(img => img.processed = null);
+            updateInfoGrid();
+            autoProcess();
+        });
+
+        elements.cardWidthInput.addEventListener('change', () => {
+            updateInfoGrid();
+        });
+
+        elements.cardHeightInput.addEventListener('change', () => {
+            updateInfoGrid();
+        });
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            updateOriginalPreview();
+            updateProcessedPreview();
+        });
+    </script>
+</body>
+</html>
