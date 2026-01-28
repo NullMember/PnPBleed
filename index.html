@@ -970,7 +970,8 @@
 
         // Download current processed card
         elements.downloadBtn.addEventListener('click', () => {
-            const processed = state.images[state.selectedIndex]?.processed;
+            const img = state.images[state.selectedIndex];
+            const processed = img?.processed;
             if (!processed) {
                 updateStatus('No processed card to download', 'error');
                 return;
@@ -978,7 +979,7 @@
 
             const link = document.createElement('a');
             link.href = processed.toDataURL();
-            link.download = `card-with-bleed-${state.selectedIndex + 1}.png`;
+            link.download = img.file.name;
             link.click();
 
             updateStatus('Card downloaded!', 'success');
@@ -1014,7 +1015,7 @@
                     if (canvas) {
                         const dataUrl = canvas.toDataURL('image/png');
                         const base64 = dataUrl.split(',')[1];
-                        zip.file(`card-with-bleed-${i + 1}.png`, base64, { base64: true });
+                        zip.file(state.images[i].file.name, base64, { base64: true });
                     }
                 }
 
