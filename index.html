@@ -874,154 +874,87 @@
                 }
             }
 
-            // Sample each edge once per column/row, then repeat it outward through the bleed.
-            const topColors = [];
-            const bottomColors = [];
-            for (let x = 0; x < w; x++) {
-                topColors.push(getTopEdgeColumnColor(sourceData, w, h, x));
-                bottomColors.push(getBottomEdgeColumnColor(sourceData, w, h, x));
-            }
-
-            const leftColors = [];
-            const rightColors = [];
+            // Each row/column is extended with its own outermost pixel, so the bleed is an exact
+            // continuation of the trim line and hard lines stay hard.
+            const leftEdge = [];
+            const rightEdge = [];
             for (let y = 0; y < h; y++) {
-                leftColors.push(getLeftEdgeRowColor(sourceData, w, h, y));
-                rightColors.push(getRightEdgeRowColor(sourceData, w, h, y));
+                leftEdge.push(sampleEdgeColor(sourceData, w, h, 0, y, 1, 0));
+                rightEdge.push(sampleEdgeColor(sourceData, w, h, w - 1, y, -1, 0));
             }
 
-            // Extend top edge
-            for (let y = 0; y < bleedPx; y++) {
-                for (let x = bleedPx; x < w + bleedPx; x++) {
-                    const topEdgeColor = topColors[x - bleedPx];
-                    const idx = (y * totalW + x) * 4;
-                    outputData[idx] = topEdgeColor.r;
-                    outputData[idx + 1] = topEdgeColor.g;
-                    outputData[idx + 2] = topEdgeColor.b;
-                    outputData[idx + 3] = topEdgeColor.a;
+            const topEdge = [];
+            const bottomEdge = [];
+            for (let x = 0; x < w; x++) {
+                topEdge.push(sampleEdgeColor(sourceData, w, h, x, 0, 0, 1));
+                bottomEdge.push(sampleEdgeColor(sourceData, w, h, x, h - 1, 0, -1));
+            }
+
+            const writeBleedPixel = (x, y, color) => {
+                const idx = (y * totalW + x) * 4;
+                outputData[idx] = color.r;
+                outputData[idx + 1] = color.g;
+                outputData[idx + 2] = color.b;
+                outputData[idx + 3] = 255;
+            };
+
+            // Extend left and right edges
+            for (let y = 0; y < h; y++) {
+                for (let i = 0; i < bleedPx; i++) {
+                    writeBleedPixel(bleedPx - 1 - i, y + bleedPx, leftEdge[y]);
+                    writeBleedPixel(w + bleedPx + i, y + bleedPx, rightEdge[y]);
                 }
             }
 
-            // Extend bottom edge
-            for (let y = h + bleedPx; y < totalH; y++) {
-                for (let x = bleedPx; x < w + bleedPx; x++) {
-                    const bottomEdgeColor = bottomColors[x - bleedPx];
-                    const idx = (y * totalW + x) * 4;
-                    outputData[idx] = bottomEdgeColor.r;
-                    outputData[idx + 1] = bottomEdgeColor.g;
-                    outputData[idx + 2] = bottomEdgeColor.b;
-                    outputData[idx + 3] = bottomEdgeColor.a;
+            // Extend top and bottom edges
+            for (let x = 0; x < w; x++) {
+                for (let i = 0; i < bleedPx; i++) {
+                    writeBleedPixel(x + bleedPx, bleedPx - 1 - i, topEdge[x]);
+                    writeBleedPixel(x + bleedPx, h + bleedPx + i, bottomEdge[x]);
                 }
             }
 
-            // Extend left edge
-            for (let y = bleedPx; y < h + bleedPx; y++) {
-                const leftEdgeColor = leftColors[y - bleedPx];
-                for (let x = 0; x < bleedPx; x++) {
-                    const idx = (y * totalW + x) * 4;
-                    outputData[idx] = leftEdgeColor.r;
-                    outputData[idx + 1] = leftEdgeColor.g;
-                    outputData[idx + 2] = leftEdgeColor.b;
-                    outputData[idx + 3] = leftEdgeColor.a;
-                }
-            }
-
-            // Extend right edge
-            for (let y = bleedPx; y < h + bleedPx; y++) {
-                const rightEdgeColor = rightColors[y - bleedPx];
-                for (let x = w + bleedPx; x < totalW; x++) {
-                    const idx = (y * totalW + x) * 4;
-                    outputData[idx] = rightEdgeColor.r;
-                    outputData[idx + 1] = rightEdgeColor.g;
-                    outputData[idx + 2] = rightEdgeColor.b;
-                    outputData[idx + 3] = rightEdgeColor.a;
-                }
-            }
-
-            // Fill each corner bleed with the dominant color found along that corner's diagonal.
-            fillCornerBleed(outputData, totalW, totalH, bleedPx, getCornerDominantColor(sourceData, w, h, 'top-left'), 'top-left');
-            fillCornerBleed(outputData, totalW, totalH, bleedPx, getCornerDominantColor(sourceData, w, h, 'top-right'), 'top-right');
-            fillCornerBleed(outputData, totalW, totalH, bleedPx, getCornerDominantColor(sourceData, w, h, 'bottom-left'), 'bottom-left');
-            fillCornerBleed(outputData, totalW, totalH, bleedPx, getCornerDominantColor(sourceData, w, h, 'bottom-right'), 'bottom-right');
+            // Corners blend the two neighbouring edge colours by angle so they meet both bands.
+            fillCornerBleed(outputData, totalW, totalH, bleedPx, 'top-left', topEdge[0], leftEdge[0]);
+            fillCornerBleed(outputData, totalW, totalH, bleedPx, 'top-right', topEdge[w - 1], rightEdge[0]);
+            fillCornerBleed(outputData, totalW, totalH, bleedPx, 'bottom-left', bottomEdge[0], leftEdge[h - 1]);
+            fillCornerBleed(outputData, totalW, totalH, bleedPx, 'bottom-right', bottomEdge[w - 1], rightEdge[h - 1]);
 
             ctx.putImageData(outputImageData, 0, 0);
             return outputCanvas;
         }
 
-        // Fill a corner bleed square using a solid corner-specific color.
-        function fillCornerBleed(outputData, totalW, totalH, bleedPx, color, corner) {
-            let x0 = 0;
-            let y0 = 0;
-
-            if (corner === 'top-left') {
-                x0 = 0;
-                y0 = 0;
-            } else if (corner === 'top-right') {
-                x0 = totalW - bleedPx;
-                y0 = 0;
-            } else if (corner === 'bottom-left') {
-                x0 = 0;
-                y0 = totalH - bleedPx;
-            } else {
-                x0 = totalW - bleedPx;
-                y0 = totalH - bleedPx;
-            }
+        // Fill a corner bleed square by blending the horizontal and vertical edge colours.
+        function fillCornerBleed(outputData, totalW, totalH, bleedPx, corner, verticalColor, horizontalColor) {
+            const isLeft = corner === 'top-left' || corner === 'bottom-left';
+            const isTop = corner === 'top-left' || corner === 'top-right';
+            const x0 = isLeft ? 0 : totalW - bleedPx;
+            const y0 = isTop ? 0 : totalH - bleedPx;
 
             for (let y = 0; y < bleedPx; y++) {
                 for (let x = 0; x < bleedPx; x++) {
+                    // Distances outside the card; the nearer band dominates.
+                    const horizontalOut = isLeft ? bleedPx - x : x + 1;
+                    const verticalOut = isTop ? bleedPx - y : y + 1;
+                    const color = mixColors(horizontalColor, verticalColor, verticalOut / (horizontalOut + verticalOut));
                     const idx = ((y0 + y) * totalW + (x0 + x)) * 4;
                     outputData[idx] = color.r;
                     outputData[idx + 1] = color.g;
                     outputData[idx + 2] = color.b;
-                    outputData[idx + 3] = color.a;
+                    outputData[idx + 3] = 255;
                 }
             }
         }
 
-        // Sample each corner's diagonal, then use the most common opaque color from the next 10 pixels.
-        function getCornerDominantColor(data, w, h, corner) {
-            const directions = {
-                'top-left': [1, 1, 0, 0],
-                'top-right': [-1, 1, w - 1, 0],
-                'bottom-left': [1, -1, 0, h - 1],
-                'bottom-right': [-1, -1, w - 1, h - 1]
-            };
-
-            const [stepX, stepY, startX, startY] = directions[corner];
+        // Walk inward from an edge and return the first opaque pixel's colour.
+        function sampleEdgeColor(data, w, h, startX, startY, stepX, stepY) {
             let x = startX;
             let y = startY;
 
             while (x >= 0 && x < w && y >= 0 && y < h) {
                 const idx = (y * w + x) * 4;
-                if (data[idx + 3] > 0) {
-                    const samples = [];
-                    for (let i = 0; i < 10; i++) {
-                        const sampleX = x + stepX * i;
-                        const sampleY = y + stepY * i;
-                        if (sampleX < 0 || sampleX >= w || sampleY < 0 || sampleY >= h) {
-                            break;
-                        }
-
-                        const sampleIdx = (sampleY * w + sampleX) * 4;
-                        if (data[sampleIdx + 3] > 0) {
-                            samples.push({
-                                r: data[sampleIdx],
-                                g: data[sampleIdx + 1],
-                                b: data[sampleIdx + 2],
-                                a: data[sampleIdx + 3]
-                            });
-                        }
-                    }
-
-                    if (samples.length > 0) {
-                        return dominantColor(samples);
-                    }
-
-                    return {
-                        r: data[idx],
-                        g: data[idx + 1],
-                        b: data[idx + 2],
-                        a: data[idx + 3]
-                    };
+                if (data[idx + 3] === 255) {
+                    return { r: data[idx], g: data[idx + 1], b: data[idx + 2], a: 255 };
                 }
 
                 x += stepX;
@@ -1031,106 +964,23 @@
             return getNearestVisiblePixel(data, w, h, startX, startY);
         }
 
-        // Pick the most frequent opaque color from a short sample list.
-        function dominantColor(samples) {
-            if (samples.length === 0) {
-                return { r: 0, g: 0, b: 0, a: 0 };
-            }
-
-            const counts = new Map();
-
-            for (const sample of samples) {
-                const key = `${sample.r},${sample.g},${sample.b},${sample.a}`;
-                const current = counts.get(key) || 0;
-                counts.set(key, current + 1);
-            }
-
-            let bestKey = null;
-            let bestCount = -1;
-
-            for (const [key, count] of counts.entries()) {
-                if (count > bestCount) {
-                    bestKey = key;
-                    bestCount = count;
-                }
-            }
-
-            const [r, g, b, a] = bestKey.split(',').map(Number);
-            return { r, g, b, a };
+        function mixColors(from, to, t) {
+            return {
+                r: Math.round(from.r + (to.r - from.r) * t),
+                g: Math.round(from.g + (to.g - from.g) * t),
+                b: Math.round(from.b + (to.b - from.b) * t),
+                a: 255
+            };
         }
 
-        // Sample the left edge for a row and return the dominant solid color.
+        // Sample the left edge for a row.
         function getLeftEdgeRowColor(data, w, h, rowY) {
-            for (let x = 0; x < w; x++) {
-                const idx = (rowY * w + x) * 4;
-
-                if (data[idx + 3] !== 255) {
-                    continue;
-                }
-
-                const samples = [];
-                for (let i = 0; i < 10 && x + i < w; i++) {
-                    const sampleIdx = (rowY * w + (x + i)) * 4;
-                    if (data[sampleIdx + 3] === 255) {
-                        samples.push({
-                            r: data[sampleIdx],
-                            g: data[sampleIdx + 1],
-                            b: data[sampleIdx + 2],
-                            a: data[sampleIdx + 3]
-                        });
-                    }
-                }
-
-                if (samples.length > 0) {
-                    return dominantColor(samples);
-                }
-
-                return {
-                    r: data[idx],
-                    g: data[idx + 1],
-                    b: data[idx + 2],
-                    a: data[idx + 3]
-                };
-            }
-
-            return getNearestVisiblePixel(data, w, h, 0, rowY);
+            return sampleEdgeColor(data, w, h, 0, rowY, 1, 0);
         }
 
-        // Sample the right edge for a row and return the dominant solid color.
+        // Sample the right edge for a row.
         function getRightEdgeRowColor(data, w, h, rowY) {
-            for (let x = w - 1; x >= 0; x--) {
-                const idx = (rowY * w + x) * 4;
-
-                if (data[idx + 3] !== 255) {
-                    continue;
-                }
-
-                const samples = [];
-                for (let i = 0; i < 10 && x - i >= 0; i++) {
-                    const sampleIdx = (rowY * w + (x - i)) * 4;
-                    if (data[sampleIdx + 3] === 255) {
-                        samples.push({
-                            r: data[sampleIdx],
-                            g: data[sampleIdx + 1],
-                            b: data[sampleIdx + 2],
-                            a: data[sampleIdx + 3]
-                        });
-                    }
-                }
-
-                if (samples.length > 0) {
-                    return dominantColor(samples);
-                }
-
-                return {
-                    r: data[idx],
-                    g: data[idx + 1],
-                    b: data[idx + 2],
-                    a: data[idx + 3]
-                };
-            }
-
-            return getNearestVisiblePixel(data, w, h, w - 1, rowY);
+            return sampleEdgeColor(data, w, h, w - 1, rowY, -1, 0);
         }
 
         // Normalize the first few source columns so the original card edge is consistent.
@@ -1161,78 +1011,14 @@
             }
         }
 
-        // Sample the top edge for a column and return the dominant solid color.
+        // Sample the top edge for a column.
         function getTopEdgeColumnColor(data, w, h, colX) {
-            for (let y = 0; y < h; y++) {
-                const idx = (y * w + colX) * 4;
-
-                if (data[idx + 3] !== 255) {
-                    continue;
-                }
-
-                const samples = [];
-                for (let i = 0; i < 10 && y + i < h; i++) {
-                    const sampleIdx = ((y + i) * w + colX) * 4;
-                    if (data[sampleIdx + 3] === 255) {
-                        samples.push({
-                            r: data[sampleIdx],
-                            g: data[sampleIdx + 1],
-                            b: data[sampleIdx + 2],
-                            a: data[sampleIdx + 3]
-                        });
-                    }
-                }
-
-                if (samples.length > 0) {
-                    return dominantColor(samples);
-                }
-
-                return {
-                    r: data[idx],
-                    g: data[idx + 1],
-                    b: data[idx + 2],
-                    a: data[idx + 3]
-                };
-            }
-
-            return getNearestVisiblePixel(data, w, h, colX, 0);
+            return sampleEdgeColor(data, w, h, colX, 0, 0, 1);
         }
 
-        // Sample the bottom edge for a column and return the dominant solid color.
+        // Sample the bottom edge for a column.
         function getBottomEdgeColumnColor(data, w, h, colX) {
-            for (let y = h - 1; y >= 0; y--) {
-                const idx = (y * w + colX) * 4;
-
-                if (data[idx + 3] !== 255) {
-                    continue;
-                }
-
-                const samples = [];
-                for (let i = 0; i < 10 && y - i >= 0; i++) {
-                    const sampleIdx = ((y - i) * w + colX) * 4;
-                    if (data[sampleIdx + 3] === 255) {
-                        samples.push({
-                            r: data[sampleIdx],
-                            g: data[sampleIdx + 1],
-                            b: data[sampleIdx + 2],
-                            a: data[sampleIdx + 3]
-                        });
-                    }
-                }
-
-                if (samples.length > 0) {
-                    return dominantColor(samples);
-                }
-
-                return {
-                    r: data[idx],
-                    g: data[idx + 1],
-                    b: data[idx + 2],
-                    a: data[idx + 3]
-                };
-            }
-
-            return getNearestVisiblePixel(data, w, h, colX, h - 1);
+            return sampleEdgeColor(data, w, h, colX, h - 1, 0, -1);
         }
 
         // Normalize the first few top rows so the original card edge is consistent.
@@ -1511,23 +1297,6 @@
             return filledData;
         }
 
-        // Get pixel from source data with bounds checking
-        function getPixel(data, w, h, x, y) {
-            if (x < 0 || x >= w || y < 0 || y >= h) {
-                return getNearestVisiblePixel(data, w, h, x, y);
-            }
-            const idx = (y * w + x) * 4;
-            if (data[idx + 3] < 255) {
-                return getNearestVisiblePixel(data, w, h, x, y);
-            }
-            return {
-                r: data[idx],
-                g: data[idx + 1],
-                b: data[idx + 2],
-                a: data[idx + 3]
-            };
-        }
-
         // Find the nearest opaque pixel around a transparent sample.
         function getNearestVisiblePixel(data, w, h, x, y) {
             const maxRadius = Math.max(w, h);
@@ -1606,41 +1375,6 @@
             }
 
             return { r: 0, g: 0, b: 0, a: 0 };
-        }
-
-        // Calculate gradient direction and extend pixel
-        function extendPixel(data, w, h, x, y, dirX, dirY, distance) {
-            // Get pixel at edge and its neighbor to calculate gradient
-            const edgePixel = getPixel(data, w, h, x, y);
-            const neighborX = Math.max(0, Math.min(w - 1, x + dirX));
-            const neighborY = Math.max(0, Math.min(h - 1, y + dirY));
-            const neighbor = getPixel(data, w, h, neighborX, neighborY);
-
-            // Calculate gradient
-            const gradR = edgePixel.r - neighbor.r;
-            const gradG = edgePixel.g - neighbor.g;
-            const gradB = edgePixel.b - neighbor.b;
-            const gradA = edgePixel.a - neighbor.a;
-
-            // Apply gradient over distance with falloff
-            const falloff = Math.max(0, 1 - distance * 0.15);
-
-            return {
-                r: Math.max(0, Math.min(255, Math.round(edgePixel.r + gradR * falloff * 0.5))),
-                g: Math.max(0, Math.min(255, Math.round(edgePixel.g + gradG * falloff * 0.5))),
-                b: Math.max(0, Math.min(255, Math.round(edgePixel.b + gradB * falloff * 0.5))),
-                a: Math.max(0, Math.min(255, Math.round(edgePixel.a + gradA * falloff * 0.3)))
-            };
-        }
-
-        // Blend two gradient pixels at corners
-        function blendCorner(grad1, grad2) {
-            return {
-                r: Math.round((grad1.r + grad2.r) / 2),
-                g: Math.round((grad1.g + grad2.g) / 2),
-                b: Math.round((grad1.b + grad2.b) / 2),
-                a: Math.round((grad1.a + grad2.a) / 2)
-            };
         }
 
         // Show preview with bleed
