@@ -828,12 +828,12 @@
 
             const sourceCtx = sourceCanvas.getContext('2d');
             const sourceImageData = sourceCtx.getImageData(0, 0, w, h);
-            let sourceData = sourceImageData.data;
+            let maskData = sourceImageData.data;
 
             // Remove white corners if enabled
             if (elements.removeWhiteCornersInput.checked) {
                 const cornerSize = parseInt(elements.cornerSizeInput.value) || 30;
-                sourceData = removeWhiteCorners(sourceData, w, h, cornerSize);
+                maskData = removeWhiteCorners(maskData, w, h, cornerSize);
             }
 
             // Remove sides if enabled
@@ -841,16 +841,17 @@
             const rightWidth = elements.removeRightSideInput.checked ? parseInt(elements.rightSideWidthInput.value) || 0 : 0;
             const topHeight = elements.removeTopSideInput.checked ? parseInt(elements.topSideHeightInput.value) || 0 : 0;
             const bottomHeight = elements.removeBottomSideInput.checked ? parseInt(elements.bottomSideHeightInput.value) || 0 : 0;
-            
+
             if (leftWidth > 0 || rightWidth > 0 || topHeight > 0 || bottomHeight > 0) {
-                sourceData = removeSides(sourceData, w, h, leftWidth, rightWidth, topHeight, bottomHeight);
+                maskData = removeSides(maskData, w, h, leftWidth, rightWidth, topHeight, bottomHeight);
             }
 
-            sourceData = fillTransparentPixels(sourceData, w, h);
-            normalizeLeftEdgeSource(sourceData, sourceImageData.data, w, h, 3);
-            normalizeTopEdgeSource(sourceData, sourceImageData.data, w, h, 3);
-            normalizeBottomEdgeSource(sourceData, sourceImageData.data, w, h, 3);
-            normalizeRightEdgeSource(sourceData, sourceImageData.data, w, h, 3);
+            // maskData still carries the holes, so it is the reference for what was removed.
+            const sourceData = fillTransparentPixels(maskData, w, h);
+            normalizeLeftEdgeSource(sourceData, maskData, w, h, 3);
+            normalizeTopEdgeSource(sourceData, maskData, w, h, 3);
+            normalizeBottomEdgeSource(sourceData, maskData, w, h, 3);
+            normalizeRightEdgeSource(sourceData, maskData, w, h, 3);
 
             // Create output image data
             const outputImageData = ctx.createImageData(totalW, totalH);
@@ -873,10 +874,25 @@
                 }
             }
 
+            // Sample each edge once per column/row, then repeat it outward through the bleed.
+            const topColors = [];
+            const bottomColors = [];
+            for (let x = 0; x < w; x++) {
+                topColors.push(getTopEdgeColumnColor(sourceData, w, h, x));
+                bottomColors.push(getBottomEdgeColumnColor(sourceData, w, h, x));
+            }
+
+            const leftColors = [];
+            const rightColors = [];
+            for (let y = 0; y < h; y++) {
+                leftColors.push(getLeftEdgeRowColor(sourceData, w, h, y));
+                rightColors.push(getRightEdgeRowColor(sourceData, w, h, y));
+            }
+
             // Extend top edge
             for (let y = 0; y < bleedPx; y++) {
                 for (let x = bleedPx; x < w + bleedPx; x++) {
-                    const topEdgeColor = getTopEdgeColumnColor(sourceData, w, h, x - bleedPx);
+                    const topEdgeColor = topColors[x - bleedPx];
                     const idx = (y * totalW + x) * 4;
                     outputData[idx] = topEdgeColor.r;
                     outputData[idx + 1] = topEdgeColor.g;
@@ -888,7 +904,7 @@
             // Extend bottom edge
             for (let y = h + bleedPx; y < totalH; y++) {
                 for (let x = bleedPx; x < w + bleedPx; x++) {
-                    const bottomEdgeColor = getBottomEdgeColumnColor(sourceData, w, h, x - bleedPx);
+                    const bottomEdgeColor = bottomColors[x - bleedPx];
                     const idx = (y * totalW + x) * 4;
                     outputData[idx] = bottomEdgeColor.r;
                     outputData[idx + 1] = bottomEdgeColor.g;
@@ -899,7 +915,7 @@
 
             // Extend left edge
             for (let y = bleedPx; y < h + bleedPx; y++) {
-                const leftEdgeColor = getLeftEdgeRowColor(sourceData, w, h, y - bleedPx);
+                const leftEdgeColor = leftColors[y - bleedPx];
                 for (let x = 0; x < bleedPx; x++) {
                     const idx = (y * totalW + x) * 4;
                     outputData[idx] = leftEdgeColor.r;
@@ -911,7 +927,7 @@
 
             // Extend right edge
             for (let y = bleedPx; y < h + bleedPx; y++) {
-                const rightEdgeColor = getRightEdgeRowColor(sourceData, w, h, y - bleedPx);
+                const rightEdgeColor = rightColors[y - bleedPx];
                 for (let x = w + bleedPx; x < totalW; x++) {
                     const idx = (y * totalW + x) * 4;
                     outputData[idx] = rightEdgeColor.r;
@@ -1017,6 +1033,10 @@
 
         // Pick the most frequent opaque color from a short sample list.
         function dominantColor(samples) {
+            if (samples.length === 0) {
+                return { r: 0, g: 0, b: 0, a: 0 };
+            }
+
             const counts = new Map();
 
             for (const sample of samples) {
@@ -1383,55 +1403,112 @@
             return processed;
         }
 
-        // Replace transparent pixels with the nearest visible pixel color.
+        // Replace transparent pixels with the nearest opaque pixel along their row or column,
+        // so removed side strips keep the artwork's variation instead of a single flat color.
         function fillTransparentPixels(sourceData, w, h) {
             const filledData = new Uint8ClampedArray(sourceData);
-            const cornerColors = {
-                'top-left': getCornerDominantColor(sourceData, w, h, 'top-left'),
-                'top-right': getCornerDominantColor(sourceData, w, h, 'top-right'),
-                'bottom-left': getCornerDominantColor(sourceData, w, h, 'bottom-left'),
-                'bottom-right': getCornerDominantColor(sourceData, w, h, 'bottom-right')
-            };
+            const FAR = 0x3fffffff;
+            const count = w * h;
+            const hDist = new Int32Array(count);
+            const hSrc = new Int32Array(count);
+            const vDist = new Int32Array(count);
+            const vSrc = new Int32Array(count);
+
+            for (let y = 0; y < h; y++) {
+                let last = -1;
+                for (let x = 0; x < w; x++) {
+                    const p = y * w + x;
+                    if (sourceData[p * 4 + 3] === 255) {
+                        last = x;
+                        hDist[p] = 0;
+                        hSrc[p] = x;
+                    } else {
+                        hDist[p] = last === -1 ? FAR : x - last;
+                        hSrc[p] = last;
+                    }
+                }
+
+                last = -1;
+                for (let x = w - 1; x >= 0; x--) {
+                    const p = y * w + x;
+                    if (sourceData[p * 4 + 3] === 255) {
+                        last = x;
+                    } else if (last !== -1 && last - x < hDist[p]) {
+                        hDist[p] = last - x;
+                        hSrc[p] = last;
+                    }
+                }
+            }
+
+            for (let x = 0; x < w; x++) {
+                let last = -1;
+                for (let y = 0; y < h; y++) {
+                    const p = y * w + x;
+                    if (sourceData[p * 4 + 3] === 255) {
+                        last = y;
+                        vDist[p] = 0;
+                        vSrc[p] = y;
+                    } else {
+                        vDist[p] = last === -1 ? FAR : y - last;
+                        vSrc[p] = last;
+                    }
+                }
+
+                last = -1;
+                for (let y = h - 1; y >= 0; y--) {
+                    const p = y * w + x;
+                    if (sourceData[p * 4 + 3] === 255) {
+                        last = y;
+                    } else if (last !== -1 && last - y < vDist[p]) {
+                        vDist[p] = last - y;
+                        vSrc[p] = last;
+                    }
+                }
+            }
+
+            const unresolved = [];
 
             for (let y = 0; y < h; y++) {
                 for (let x = 0; x < w; x++) {
-                    const idx = (y * w + x) * 4;
-                    if (filledData[idx + 3] === 255) {
+                    const p = y * w + x;
+                    if (sourceData[p * 4 + 3] === 255) {
                         continue;
                     }
 
-                    const corner = getNearestCorner(x, y, w, h);
-                    const color = cornerColors[corner];
-                    filledData[idx] = color.r;
-                    filledData[idx + 1] = color.g;
-                    filledData[idx + 2] = color.b;
+                    let sourceIdx = -1;
+                    if (hSrc[p] !== -1 && hDist[p] <= vDist[p]) {
+                        sourceIdx = (y * w + hSrc[p]) * 4;
+                    } else if (vSrc[p] !== -1) {
+                        sourceIdx = (vSrc[p] * w + x) * 4;
+                    }
+
+                    if (sourceIdx === -1) {
+                        unresolved.push(p);
+                        continue;
+                    }
+
+                    const idx = p * 4;
+                    filledData[idx] = sourceData[sourceIdx];
+                    filledData[idx + 1] = sourceData[sourceIdx + 1];
+                    filledData[idx + 2] = sourceData[sourceIdx + 2];
                     filledData[idx + 3] = 255;
                 }
             }
 
-            return filledData;
-        }
-
-        // Pick the closest corner for a transparent pixel.
-        function getNearestCorner(x, y, w, h) {
-            const distances = {
-                'top-left': x * x + y * y,
-                'top-right': (w - 1 - x) * (w - 1 - x) + y * y,
-                'bottom-left': x * x + (h - 1 - y) * (h - 1 - y),
-                'bottom-right': (w - 1 - x) * (w - 1 - x) + (h - 1 - y) * (h - 1 - y)
-            };
-
-            let nearestCorner = 'top-left';
-            let nearestDistance = distances[nearestCorner];
-
-            for (const [corner, distance] of Object.entries(distances)) {
-                if (distance < nearestDistance) {
-                    nearestCorner = corner;
-                    nearestDistance = distance;
-                }
+            // Pixels with no opaque neighbour in their row or column (e.g. where two removed
+            // sides overlap) are resolved against the already-filled data.
+            for (const p of unresolved) {
+                const x = p % w;
+                const y = (p - x) / w;
+                const color = getNearestVisiblePixel(filledData, w, h, x, y);
+                const idx = p * 4;
+                filledData[idx] = color.r;
+                filledData[idx + 1] = color.g;
+                filledData[idx + 2] = color.b;
+                filledData[idx + 3] = 255;
             }
 
-            return nearestCorner;
+            return filledData;
         }
 
         // Get pixel from source data with bounds checking
@@ -1734,12 +1811,19 @@
             autoProcess();
         });
 
+        // Card dimensions change the mm-to-pixel ratio, so the bleed has to be rebuilt.
         elements.cardWidthInput.addEventListener('change', () => {
+            state.processedCards = {};
+            state.images.forEach(img => img.processed = null);
             updateInfoGrid();
+            autoProcess();
         });
 
         elements.cardHeightInput.addEventListener('change', () => {
+            state.processedCards = {};
+            state.images.forEach(img => img.processed = null);
             updateInfoGrid();
+            autoProcess();
         });
 
         // Handle window resize
