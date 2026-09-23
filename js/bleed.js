@@ -14,8 +14,9 @@ function mmToPixels(mm, cardWidthMm, cardHeightMm, imageWidth, imageHeight) {
     return mm * avgPxPerMm;
 }
 
-// Add bleed to card by extending edge gradients
-function addBleedToCard(sourceCanvas, bleedPx) {
+// Add bleed to card by extending edge gradients. Corner/edge trims are entered
+// in mm and converted with pxPerMm (the image's resolution at card size).
+function addBleedToCard(sourceCanvas, bleedPx, pxPerMm) {
     const w = sourceCanvas.width;
     const h = sourceCanvas.height;
     const totalW = w + 2 * bleedPx;
@@ -32,15 +33,16 @@ function addBleedToCard(sourceCanvas, bleedPx) {
 
     // Remove white corners if enabled
     if (elements.removeWhiteCornersInput.checked) {
-        const cornerSize = parseInt(elements.cornerSizeInput.value) || 30;
+        const cornerSize = Math.max(1, Math.round((parseFloat(elements.cornerSizeInput.value) || 2.5) * pxPerMm));
         maskData = removeWhiteCorners(maskData, w, h, cornerSize);
     }
 
     // Remove sides if enabled
-    const leftWidth = elements.removeLeftSideInput.checked ? parseInt(elements.leftSideWidthInput.value) || 0 : 0;
-    const rightWidth = elements.removeRightSideInput.checked ? parseInt(elements.rightSideWidthInput.value) || 0 : 0;
-    const topHeight = elements.removeTopSideInput.checked ? parseInt(elements.topSideHeightInput.value) || 0 : 0;
-    const bottomHeight = elements.removeBottomSideInput.checked ? parseInt(elements.bottomSideHeightInput.value) || 0 : 0;
+    const trimPx = (checkbox, input) => (checkbox.checked ? Math.round((parseFloat(input.value) || 0) * pxPerMm) : 0);
+    const leftWidth = trimPx(elements.removeLeftSideInput, elements.leftSideWidthInput);
+    const rightWidth = trimPx(elements.removeRightSideInput, elements.rightSideWidthInput);
+    const topHeight = trimPx(elements.removeTopSideInput, elements.topSideHeightInput);
+    const bottomHeight = trimPx(elements.removeBottomSideInput, elements.bottomSideHeightInput);
 
     if (leftWidth > 0 || rightWidth > 0 || topHeight > 0 || bottomHeight > 0) {
         maskData = removeSides(maskData, w, h, leftWidth, rightWidth, topHeight, bottomHeight);
@@ -72,6 +74,13 @@ function addBleedToCard(sourceCanvas, bleedPx) {
             outputData[destIdx + 2] = sourceData[srcIdx + 2];
             outputData[destIdx + 3] = sourceData[srcIdx + 3];
         }
+    }
+
+    const mode = elements.bleedMode.value;
+    if (mode === 'mirror' || mode === 'solid') {
+        fillBleedZone(outputData, totalW, totalH, bleedPx, sourceData, w, h, mode);
+        ctx.putImageData(outputImageData, 0, 0);
+        return outputCanvas;
     }
 
     // Each row/column is extended with its own outermost pixel, so the bleed is an exact
@@ -144,4 +153,38 @@ function fillCornerBleed(outputData, totalW, totalH, bleedPx, corner, verticalCo
             outputData[idx + 3] = 255;
         }
     }
+}
+
+// Mirror or solid-colour bleed: every pixel outside the trim area is either a
+// reflection of the artwork across the nearest edge, or the chosen colour.
+function fillBleedZone(outputData, totalW, totalH, bleedPx, sourceData, w, h, mode) {
+    const reflect = (i, n) => {
+        if (i < 0) i = -i - 1;
+        if (i >= n) i = 2 * n - i - 1;
+        return Math.max(0, Math.min(n - 1, i));
+    };
+    const solid = hexToRgb(elements.bleedColor.value);
+    for (let y = 0; y < totalH; y++) {
+        for (let x = 0; x < totalW; x++) {
+            const ix = x - bleedPx, iy = y - bleedPx;
+            if (ix >= 0 && ix < w && iy >= 0 && iy < h) continue;
+            const o = (y * totalW + x) * 4;
+            if (mode === 'solid') {
+                outputData[o] = solid.r;
+                outputData[o + 1] = solid.g;
+                outputData[o + 2] = solid.b;
+            } else {
+                const s = (reflect(iy, h) * w + reflect(ix, w)) * 4;
+                outputData[o] = sourceData[s];
+                outputData[o + 1] = sourceData[s + 1];
+                outputData[o + 2] = sourceData[s + 2];
+            }
+            outputData[o + 3] = 255;
+        }
+    }
+}
+
+function hexToRgb(hex) {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex) || [0, '00', '00', '00'];
+    return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
 }

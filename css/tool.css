@@ -1,0 +1,16 @@
+/* PnPBleed-only styles. The shared base lives in style.css (synced from the hub). */
+
+/* ---- PnPBleed: trim line toggle -------------------------------------------- */
+
+.trim-toggle {
+    margin-left: 8px;
+    font-weight: 400;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.control-group[hidden] {
+    display: none;
+}

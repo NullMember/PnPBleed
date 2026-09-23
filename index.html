@@ -7,6 +7,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/tool.css">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="shared/icon.svg" type="image/svg+xml">
+    <meta name="theme-color" content="#1a1d27">
+    <script src="shared/pnp-theme.js"></script>
+    <link rel="stylesheet" href="shared/pnp-shared.css">
 </head>
 <body>
     <div class="container">
@@ -20,31 +26,53 @@
             <div class="sidebar">
                 <div class="panel">
                     <div class="panel-title">Upload</div>
-                    <div class="control-group">
-                        <label for="imageInput">Upload Images</label>
-                        <input type="file" id="imageInput" multiple accept="image/*">
-                        <div class="input-hint">Select one or multiple card images</div>
+                    <div class="dropzone" id="dropZone">
+                        <div class="dz-title">Drag &amp; drop card images here</div>
+                        <div>or click to browse</div>
+                        <input type="file" id="imageInput" multiple accept="image/*" hidden>
                     </div>
+                    <div class="input-hint">Each image should be one card at its finished (trim) size.</div>
+                    <div id="importSlot"></div>
                 </div>
 
                 <div class="panel">
                     <div class="panel-title">Card Dimensions <span class="help" tabindex="0" data-tip="Enter the card's finished (trim) size, not including bleed — the bleed amount below is added on top of this.">?</span></div>
                     <div class="control-group">
-                        <label for="cardWidthInput">Card Width (mm)</label>
-                        <input type="number" id="cardWidthInput" value="63" min="1" max="200" step="0.1">
-                        <div class="input-hint">Standard: 63mm</div>
+                        <label for="cardPreset">Preset</label>
+                        <select id="cardPreset"></select>
                     </div>
 
-                    <div class="control-group">
-                        <label for="cardHeightInput">Card Height (mm)</label>
-                        <input type="number" id="cardHeightInput" value="88" min="1" max="200" step="0.1">
-                        <div class="input-hint">Standard: 88mm</div>
+                    <div class="row">
+                        <div class="control-group">
+                            <label for="cardWidthInput">Width (mm)</label>
+                            <input type="number" id="cardWidthInput" value="63" min="1" max="200" step="0.1" data-unit="mm">
+                        </div>
+
+                        <div class="control-group">
+                            <label for="cardHeightInput">Height (mm)</label>
+                            <input type="number" id="cardHeightInput" value="88" min="1" max="200" step="0.1" data-unit="mm">
+                        </div>
                     </div>
 
                     <div class="control-group">
                         <label for="bleedInput">Bleed Amount (mm)</label>
-                        <input type="number" id="bleedInput" value="2" min="0.1" max="50" step="0.1">
+                        <input type="number" id="bleedInput" value="2" min="0.1" max="50" step="0.1" data-unit="mm">
                         <div class="input-hint">Distance to extend edges</div>
+                    </div>
+
+                    <div class="control-group">
+                        <label for="bleedMode">Bleed style</label>
+                        <select id="bleedMode">
+                            <option value="extend">Extend edge pixels</option>
+                            <option value="mirror">Mirror the artwork</option>
+                            <option value="solid">Solid colour</option>
+                        </select>
+                        <div class="input-hint" id="bleedModeHint">Best for flat borders and frames.</div>
+                    </div>
+
+                    <div class="control-group" id="bleedColorGroup" hidden>
+                        <label for="bleedColor">Bleed colour</label>
+                        <input type="color" id="bleedColor" value="#000000">
                     </div>
                 </div>
 
@@ -59,21 +87,23 @@
                     </div>
 
                     <div class="control-group">
-                        <label for="cornerSizeInput">Corner Size (px)</label>
-                        <input type="number" id="cornerSizeInput" value="30" min="5" max="100" step="1" disabled>
+                        <label for="cornerSizeInput">Corner Size (mm)</label>
+                        <input type="number" id="cornerSizeInput" value="2.5" min="0.1" max="10" step="0.1" disabled data-unit="mm">
                         <div class="input-hint">Square region at each corner</div>
                     </div>
                 </div>
 
                 <div class="panel">
                     <div class="panel-title">Edge Removal <span class="help" tabindex="0" data-tip="Trims a strip from one or more sides before adding bleed — useful for removing an existing border or printer artifact.">?</span></div>
+                    <button type="button" class="btn-secondary btn-small" id="detectBorderBtn" disabled>Detect white border</button>
+                    <div class="input-hint">Measures the plain white margin on the selected card and fills in the sides below.</div>
                     <div class="control-group">
                         <label>
                             <input type="checkbox" id="removeLeftSideInput">
                             Remove Left Edge
                         </label>
-                        <input type="number" id="leftSideWidthInput" value="0" min="0" max="50" step="1" disabled>
-                        <div class="input-hint">Width (px) to remove from left</div>
+                        <input type="number" id="leftSideWidthInput" value="0" min="0" max="10" step="0.1" disabled data-unit="mm">
+                        <div class="input-hint">Width (mm) to remove from left</div>
                     </div>
 
                     <div class="control-group">
@@ -81,8 +111,8 @@
                             <input type="checkbox" id="removeRightSideInput">
                             Remove Right Edge
                         </label>
-                        <input type="number" id="rightSideWidthInput" value="0" min="0" max="50" step="1" disabled>
-                        <div class="input-hint">Width (px) to remove from right</div>
+                        <input type="number" id="rightSideWidthInput" value="0" min="0" max="10" step="0.1" disabled data-unit="mm">
+                        <div class="input-hint">Width (mm) to remove from right</div>
                     </div>
 
                     <div class="control-group">
@@ -90,8 +120,8 @@
                             <input type="checkbox" id="removeTopSideInput">
                             Remove Top Edge
                         </label>
-                        <input type="number" id="topSideHeightInput" value="0" min="0" max="50" step="1" disabled>
-                        <div class="input-hint">Height (px) to remove from top</div>
+                        <input type="number" id="topSideHeightInput" value="0" min="0" max="10" step="0.1" disabled data-unit="mm">
+                        <div class="input-hint">Height (mm) to remove from top</div>
                     </div>
 
                     <div class="control-group">
@@ -99,8 +129,8 @@
                             <input type="checkbox" id="removeBottomSideInput">
                             Remove Bottom Edge
                         </label>
-                        <input type="number" id="bottomSideHeightInput" value="0" min="0" max="50" step="1" disabled>
-                        <div class="input-hint">Height (px) to remove from bottom</div>
+                        <input type="number" id="bottomSideHeightInput" value="0" min="0" max="10" step="0.1" disabled data-unit="mm">
+                        <div class="input-hint">Height (mm) to remove from bottom</div>
                     </div>
                 </div>
 
@@ -110,6 +140,7 @@
                         <button class="btn-secondary" id="downloadBtn" disabled>Download Current Card</button>
                         <button class="btn-secondary" id="downloadAllBtn" disabled>Download All Cards</button>
                     </div>
+                    <div id="sendSlot"></div>
 
                     <div class="status info" id="status">
                         👋 Upload images to get started
@@ -142,7 +173,7 @@
                             </div>
                         </div>
                         <div class="comparison-item">
-                            <div class="comparison-label">With Bleed</div>
+                            <div class="comparison-label">With Bleed <label class="inline trim-toggle"><input type="checkbox" id="showTrimLine" checked> trim line</label></div>
                             <div class="canvas-container" id="processedContainer">
                                 <div class="empty-state">
                                     <div class="empty-state-icon">✨</div>
@@ -174,6 +205,7 @@
         </div>
     </div>
 
+    <script src="shared/pnp-shared.js"></script>
     <script src="js/edge.js"></script>
     <script src="js/sides.js"></script>
     <script src="js/bleed.js"></script>
