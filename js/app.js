@@ -267,13 +267,10 @@ elements.downloadBtn.addEventListener('click', () => {
         return;
     }
     const processed = processCard(state.selectedIndex);
-
-    const link = document.createElement('a');
-    link.href = processed.toDataURL();
-    link.download = pngName(img.file.name);
-    link.click();
-
-    updateStatus('Card downloaded!', 'success');
+    PnP.canvasToBlob(processed).then((blob) => {
+        PnP.downloadBlob(blob, pngName(img.file.name));
+        updateStatus('Card downloaded!', 'success');
+    });
 });
 
 // Download all processed cards
@@ -300,7 +297,7 @@ elements.downloadAllBtn.addEventListener('click', async () => {
         }
 
         const blob = await zip.generateAsync({ type: 'blob' });
-        saveAs(blob, 'cards-with-bleed.zip');
+        PnP.downloadBlob(blob, 'cards-with-bleed.zip');
 
         elements.downloadAllBtn.disabled = false;
         updateStatus(`All ${state.images.length} card(s) downloaded as ZIP!`, 'success');
@@ -430,7 +427,6 @@ PnP.dropzone(document.getElementById('dropZone'), {
     onFiles: loadFiles,
 });
 
-PnP.importButton(document.getElementById('importSlot'), loadFiles);
 
 async function processedItems() {
     processAll();
