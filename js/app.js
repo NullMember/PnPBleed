@@ -110,9 +110,10 @@ function processCard(i) {
     return processed;
 }
 
-// Processed cards are always PNG, whatever the source format was
+// Processed cards are always PNG, whatever the source format was:
+// "Ace.jpg" -> "Ace_bleed.png"
 function pngName(name) {
-    return name.replace(/\.[^.]+$/, '') + '.png';
+    return `${PnP.baseName(name)}_bleed.png`;
 }
 
 function processAll() {
@@ -297,7 +298,7 @@ elements.downloadAllBtn.addEventListener('click', async () => {
         }
 
         const blob = await zip.generateAsync({ type: 'blob' });
-        PnP.downloadBlob(blob, 'cards-with-bleed.zip');
+        PnP.downloadBlob(blob, PnP.outputName(state.images.map((img) => img.file), 'bleed.zip', 'cards-with-bleed.zip'));
 
         elements.downloadAllBtn.disabled = false;
         updateStatus(`All ${state.images.length} card(s) downloaded as ZIP!`, 'success');
