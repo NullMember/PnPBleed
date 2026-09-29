@@ -310,7 +310,7 @@ elements.downloadBtn.addEventListener('click', async () => {
         return;
     }
     PnP.downloadBlob(await cardBlob(state.selectedIndex), pngName(img.file.name));
-    updateStatus('Card downloaded!', 'success');
+    updateStatus('Downloaded.', 'success');
 });
 
 // Download all processed cards. Cards are encoded one at a time and only the
@@ -330,7 +330,7 @@ elements.downloadAllBtn.addEventListener('click', async () => {
         PnP.downloadBlob(blob, PnP.outputName(state.images.map((img) => img.file), 'bleed.zip', 'cards-with-bleed.zip'));
 
         elements.downloadAllBtn.disabled = false;
-        updateStatus(`All ${state.images.length} card(s) downloaded as ZIP!`, 'success');
+        updateStatus(`Downloaded ${state.images.length} card(s).`, 'success');
     } catch (error) {
         updateStatus(`Error creating ZIP: ${error.message}`, 'error');
         elements.downloadAllBtn.disabled = false;
@@ -376,8 +376,8 @@ function reprocess() {
 const BLEED_MODE_HINTS = {
     extend: 'Best for flat borders and frames.',
     mirror: 'Best for full-bleed artwork and photos.',
-    solid: 'Fills the bleed with one colour, e.g. a black card border.',
-    shape: 'For tokens, coins and other shapes on a transparent background: the bleed follows the outline. Images that record their DPI (from CardCrop, Layout…) are measured by it; others take the card size as the whole image. Corner and edge removal are not used.',
+    solid: 'One colour, e.g. for a black border.',
+    shape: 'For tokens and shapes on a transparent background.',
 };
 
 function updateBleedModeUI() {

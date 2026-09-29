@@ -16,7 +16,7 @@
     <div class="container">
         <header>
             <h1>Card Bleed Generator</h1>
-            <p class="subtitle">Extend card art past the trim edge so small cutting misalignment doesn't leave white borders.</p>
+            <p class="subtitle">Add bleed to cards and shapes, so a slightly-off cut shows no white edge.</p>
         </header>
 
         <div class="content">
@@ -29,11 +29,11 @@
                         <div>or click to browse</div>
                         <input type="file" id="imageInput" multiple accept="image/*" hidden>
                     </div>
-                    <div class="input-hint">Each image should be one card at its finished (trim) size.</div>
+                    <div class="input-hint">One image per card, at its finished size.</div>
                 </div>
 
                 <div class="panel">
-                    <div class="panel-title">Card Dimensions <span class="help" tabindex="0" data-tip="Enter the card's finished (trim) size, not including bleed — the bleed amount below is added on top of this.">?</span></div>
+                    <div class="panel-title">Card Dimensions <span class="help" tabindex="0" data-tip="The finished card size, without bleed.">?</span></div>
                     <div class="control-group">
                         <label for="cardPreset">Preset</label>
                         <select id="cardPreset"></select>
@@ -52,9 +52,8 @@
                     </div>
 
                     <div class="control-group">
-                        <label for="bleedInput">Bleed Amount (mm)</label>
+                        <label for="bleedInput">Bleed (mm)</label>
                         <input type="number" id="bleedInput" value="2" min="0.1" max="50" step="0.1" data-unit="mm">
-                        <div class="input-hint">Distance to extend edges</div>
                     </div>
 
                     <div class="control-group">
@@ -75,60 +74,53 @@
                 </div>
 
                 <div class="panel">
-                    <div class="panel-title">Corner Removal <span class="help" tabindex="0" data-tip="Use this if your card image already has printed rounded corners or a white border you want stripped before adding bleed.">?</span></div>
+                    <div class="panel-title">Corner Removal <span class="help" tabindex="0" data-tip="Removes printed rounded corners before adding bleed.">?</span></div>
                     <div class="control-group">
                         <label>
                             <input type="checkbox" id="removeWhiteCornersInput">
-                            Remove Corners
+                            Remove corners
                         </label>
-                        <div class="input-hint">Remove corner pixels based on radius</div>
                     </div>
 
                     <div class="control-group">
-                        <label for="cornerSizeInput">Corner Size (mm)</label>
+                        <label for="cornerSizeInput">Corner size (mm)</label>
                         <input type="number" id="cornerSizeInput" value="2.5" min="0.1" max="10" step="0.1" disabled data-unit="mm">
-                        <div class="input-hint">Square region at each corner</div>
                     </div>
                 </div>
 
                 <div class="panel">
-                    <div class="panel-title">Edge Removal <span class="help" tabindex="0" data-tip="Trims a strip from one or more sides before adding bleed — useful for removing an existing border or printer artifact.">?</span></div>
+                    <div class="panel-title">Edge Removal <span class="help" tabindex="0" data-tip="Removes a border or strip from the sides before adding bleed.">?</span></div>
                     <button type="button" class="btn-secondary btn-small" id="detectBorderBtn" disabled>Detect white border</button>
-                    <div class="input-hint">Measures the plain white margin on the selected card and fills in the sides below.</div>
                     <div class="control-group">
                         <label>
                             <input type="checkbox" id="removeLeftSideInput">
-                            Remove Left Edge
+                            Left edge (mm)
                         </label>
                         <input type="number" id="leftSideWidthInput" value="0" min="0" max="10" step="0.1" disabled data-unit="mm">
-                        <div class="input-hint">Width (mm) to remove from left</div>
                     </div>
 
                     <div class="control-group">
                         <label>
                             <input type="checkbox" id="removeRightSideInput">
-                            Remove Right Edge
+                            Right edge (mm)
                         </label>
                         <input type="number" id="rightSideWidthInput" value="0" min="0" max="10" step="0.1" disabled data-unit="mm">
-                        <div class="input-hint">Width (mm) to remove from right</div>
                     </div>
 
                     <div class="control-group">
                         <label>
                             <input type="checkbox" id="removeTopSideInput">
-                            Remove Top Edge
+                            Top edge (mm)
                         </label>
                         <input type="number" id="topSideHeightInput" value="0" min="0" max="10" step="0.1" disabled data-unit="mm">
-                        <div class="input-hint">Height (mm) to remove from top</div>
                     </div>
 
                     <div class="control-group">
                         <label>
                             <input type="checkbox" id="removeBottomSideInput">
-                            Remove Bottom Edge
+                            Bottom edge (mm)
                         </label>
                         <input type="number" id="bottomSideHeightInput" value="0" min="0" max="10" step="0.1" disabled data-unit="mm">
-                        <div class="input-hint">Height (mm) to remove from bottom</div>
                     </div>
                 </div>
 
