@@ -1,6 +1,6 @@
 // Core bleed / image-processing algorithm: turns a trimmed card canvas into a canvas
 // with extended-edge bleed, optionally after removing rounded corners and/or side strips.
-// Depends on the helpers in sides.js (removeWhiteCorners, removeSides) and edge.js
+// Depends on the helpers in sides.js (removeWhiteCorners) and edge.js
 // (fillTransparentPixels, normalize*EdgeSource, sampleEdgeColor, mixColors).
 
 // Convert mm to pixels based on card dimensions
@@ -14,43 +14,36 @@ function mmToPixels(mm, cardWidthMm, cardHeightMm, imageWidth, imageHeight) {
     return mm * avgPxPerMm;
 }
 
-// Add bleed to card by extending edge gradients. Corner/edge trims are entered
-// in mm and converted with pxPerMm (the image's resolution at card size).
+// Add bleed to a card. Removed edge strips are cut off and become part of
+// the bleed: the kept card is the source, and each side's bleed is the bleed
+// amount plus what was removed there, so the output stays the image's size
+// plus the bleed and the trim line stays at the image's edge. Removed corners
+// are inside the card and are filled from their neighbours. Corner/edge trims
+// are entered in mm and converted with pxPerMm (the image's resolution).
 function addBleedToCard(sourceCanvas, bleedPx, pxPerMm) {
     // Shaped pieces get bleed around their outline; corner and edge removal
     // are for rectangular cards.
     if (elements.bleedMode.value === 'shape') return addShapeBleed(sourceCanvas, bleedPx);
-    const w = sourceCanvas.width;
-    const h = sourceCanvas.height;
-    const totalW = w + 2 * bleedPx;
-    const totalH = h + 2 * bleedPx;
+    const W = sourceCanvas.width;
+    const H = sourceCanvas.height;
 
-    const outputCanvas = document.createElement('canvas');
-    outputCanvas.width = totalW;
-    outputCanvas.height = totalH;
-    const ctx = outputCanvas.getContext('2d');
+    const trimPx = (checkbox, input) => (checkbox.checked ? Math.max(0, Math.round((parseFloat(input.value) || 0) * pxPerMm)) : 0);
+    let left = trimPx(elements.removeLeftSideInput, elements.leftSideWidthInput);
+    let right = trimPx(elements.removeRightSideInput, elements.rightSideWidthInput);
+    let top = trimPx(elements.removeTopSideInput, elements.topSideHeightInput);
+    let bottom = trimPx(elements.removeBottomSideInput, elements.bottomSideHeightInput);
+    // Keep at least one pixel of card.
+    if (left + right >= W) { left = Math.floor((W - 1) / 2); right = W - 1 - left; }
+    if (top + bottom >= H) { top = Math.floor((H - 1) / 2); bottom = H - 1 - top; }
+    const w = W - left - right;
+    const h = H - top - bottom;
 
-    const sourceCtx = sourceCanvas.getContext('2d');
-    const sourceImageData = sourceCtx.getImageData(0, 0, w, h);
-    let maskData = sourceImageData.data;
-
-    // Remove white corners if enabled
+    // The kept card.
+    let maskData = sourceCanvas.getContext('2d').getImageData(left, top, w, h).data;
     if (elements.removeWhiteCornersInput.checked) {
         const cornerSize = Math.max(1, Math.round((parseFloat(elements.cornerSizeInput.value) || 2.5) * pxPerMm));
         maskData = removeWhiteCorners(maskData, w, h, cornerSize);
     }
-
-    // Remove sides if enabled
-    const trimPx = (checkbox, input) => (checkbox.checked ? Math.round((parseFloat(input.value) || 0) * pxPerMm) : 0);
-    const leftWidth = trimPx(elements.removeLeftSideInput, elements.leftSideWidthInput);
-    const rightWidth = trimPx(elements.removeRightSideInput, elements.rightSideWidthInput);
-    const topHeight = trimPx(elements.removeTopSideInput, elements.topSideHeightInput);
-    const bottomHeight = trimPx(elements.removeBottomSideInput, elements.bottomSideHeightInput);
-
-    if (leftWidth > 0 || rightWidth > 0 || topHeight > 0 || bottomHeight > 0) {
-        maskData = removeSides(maskData, w, h, leftWidth, rightWidth, topHeight, bottomHeight);
-    }
-
     // maskData still carries the holes, so it is the reference for what was removed.
     const sourceData = fillTransparentPixels(maskData, w, h);
     normalizeLeftEdgeSource(sourceData, maskData, w, h, 3);
@@ -58,20 +51,22 @@ function addBleedToCard(sourceCanvas, bleedPx, pxPerMm) {
     normalizeBottomEdgeSource(sourceData, maskData, w, h, 3);
     normalizeRightEdgeSource(sourceData, maskData, w, h, 3);
 
-    // Create output image data
+    // Bleed on each side: the bleed amount plus the strip removed there.
+    const pad = { left: bleedPx + left, right: bleedPx + right, top: bleedPx + top, bottom: bleedPx + bottom };
+    const totalW = W + 2 * bleedPx;
+    const totalH = H + 2 * bleedPx;
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = totalW;
+    outputCanvas.height = totalH;
+    const ctx = outputCanvas.getContext('2d');
     const outputImageData = ctx.createImageData(totalW, totalH);
     const outputData = outputImageData.data;
 
-    // Initialize with transparent
-    for (let i = 0; i < outputData.length; i += 4) {
-        outputData[i + 3] = 0; // alpha = 0
-    }
-
-    // Place original image in center
+    // The kept card in place
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const srcIdx = (y * w + x) * 4;
-            const destIdx = ((y + bleedPx) * totalW + (x + bleedPx)) * 4;
+            const destIdx = ((y + pad.top) * totalW + (x + pad.left)) * 4;
             outputData[destIdx] = sourceData[srcIdx];
             outputData[destIdx + 1] = sourceData[srcIdx + 1];
             outputData[destIdx + 2] = sourceData[srcIdx + 2];
@@ -81,7 +76,7 @@ function addBleedToCard(sourceCanvas, bleedPx, pxPerMm) {
 
     const mode = elements.bleedMode.value;
     if (mode === 'mirror' || mode === 'solid') {
-        fillBleedZone(outputData, totalW, totalH, bleedPx, sourceData, w, h, mode);
+        fillBleedZone(outputData, totalW, totalH, pad, sourceData, w, h, mode);
         ctx.putImageData(outputImageData, 0, 0);
         return outputCanvas;
     }
@@ -94,7 +89,6 @@ function addBleedToCard(sourceCanvas, bleedPx, pxPerMm) {
         leftEdge.push(sampleEdgeColor(sourceData, w, h, 0, y, 1, 0));
         rightEdge.push(sampleEdgeColor(sourceData, w, h, w - 1, y, -1, 0));
     }
-
     const topEdge = [];
     const bottomEdge = [];
     for (let x = 0; x < w; x++) {
@@ -109,45 +103,35 @@ function addBleedToCard(sourceCanvas, bleedPx, pxPerMm) {
         outputData[idx + 2] = color.b;
         outputData[idx + 3] = 255;
     };
-
-    // Extend left and right edges
     for (let y = 0; y < h; y++) {
-        for (let i = 0; i < bleedPx; i++) {
-            writeBleedPixel(bleedPx - 1 - i, y + bleedPx, leftEdge[y]);
-            writeBleedPixel(w + bleedPx + i, y + bleedPx, rightEdge[y]);
-        }
+        for (let i = 0; i < pad.left; i++) writeBleedPixel(pad.left - 1 - i, y + pad.top, leftEdge[y]);
+        for (let i = 0; i < pad.right; i++) writeBleedPixel(pad.left + w + i, y + pad.top, rightEdge[y]);
     }
-
-    // Extend top and bottom edges
     for (let x = 0; x < w; x++) {
-        for (let i = 0; i < bleedPx; i++) {
-            writeBleedPixel(x + bleedPx, bleedPx - 1 - i, topEdge[x]);
-            writeBleedPixel(x + bleedPx, h + bleedPx + i, bottomEdge[x]);
-        }
+        for (let i = 0; i < pad.top; i++) writeBleedPixel(x + pad.left, pad.top - 1 - i, topEdge[x]);
+        for (let i = 0; i < pad.bottom; i++) writeBleedPixel(x + pad.left, pad.top + h + i, bottomEdge[x]);
     }
 
     // Corners blend the two neighbouring edge colours by angle so they meet both bands.
-    fillCornerBleed(outputData, totalW, totalH, bleedPx, 'top-left', topEdge[0], leftEdge[0]);
-    fillCornerBleed(outputData, totalW, totalH, bleedPx, 'top-right', topEdge[w - 1], rightEdge[0]);
-    fillCornerBleed(outputData, totalW, totalH, bleedPx, 'bottom-left', bottomEdge[0], leftEdge[h - 1]);
-    fillCornerBleed(outputData, totalW, totalH, bleedPx, 'bottom-right', bottomEdge[w - 1], rightEdge[h - 1]);
+    fillCornerBleed(outputData, totalW, 0, 0, pad.left, pad.top, 'top-left', topEdge[0], leftEdge[0]);
+    fillCornerBleed(outputData, totalW, totalW - pad.right, 0, pad.right, pad.top, 'top-right', topEdge[w - 1], rightEdge[0]);
+    fillCornerBleed(outputData, totalW, 0, totalH - pad.bottom, pad.left, pad.bottom, 'bottom-left', bottomEdge[0], leftEdge[h - 1]);
+    fillCornerBleed(outputData, totalW, totalW - pad.right, totalH - pad.bottom, pad.right, pad.bottom, 'bottom-right', bottomEdge[w - 1], rightEdge[h - 1]);
 
     ctx.putImageData(outputImageData, 0, 0);
     return outputCanvas;
 }
 
-// Fill a corner bleed square by blending the horizontal and vertical edge colours.
-function fillCornerBleed(outputData, totalW, totalH, bleedPx, corner, verticalColor, horizontalColor) {
+// Fill a corner bleed box (cw × ch at x0, y0) by blending the horizontal and
+// vertical edge colours.
+function fillCornerBleed(outputData, totalW, x0, y0, cw, ch, corner, verticalColor, horizontalColor) {
     const isLeft = corner === 'top-left' || corner === 'bottom-left';
     const isTop = corner === 'top-left' || corner === 'top-right';
-    const x0 = isLeft ? 0 : totalW - bleedPx;
-    const y0 = isTop ? 0 : totalH - bleedPx;
-
-    for (let y = 0; y < bleedPx; y++) {
-        for (let x = 0; x < bleedPx; x++) {
+    for (let y = 0; y < ch; y++) {
+        for (let x = 0; x < cw; x++) {
             // Distances outside the card; the nearer band dominates.
-            const horizontalOut = isLeft ? bleedPx - x : x + 1;
-            const verticalOut = isTop ? bleedPx - y : y + 1;
+            const horizontalOut = isLeft ? cw - x : x + 1;
+            const verticalOut = isTop ? ch - y : y + 1;
             const color = mixColors(horizontalColor, verticalColor, verticalOut / (horizontalOut + verticalOut));
             const idx = ((y0 + y) * totalW + (x0 + x)) * 4;
             outputData[idx] = color.r;
@@ -160,7 +144,7 @@ function fillCornerBleed(outputData, totalW, totalH, bleedPx, corner, verticalCo
 
 // Mirror or solid-colour bleed: every pixel outside the trim area is either a
 // reflection of the artwork across the nearest edge, or the chosen colour.
-function fillBleedZone(outputData, totalW, totalH, bleedPx, sourceData, w, h, mode) {
+function fillBleedZone(outputData, totalW, totalH, pad, sourceData, w, h, mode) {
     const reflect = (i, n) => {
         if (i < 0) i = -i - 1;
         if (i >= n) i = 2 * n - i - 1;
@@ -169,7 +153,7 @@ function fillBleedZone(outputData, totalW, totalH, bleedPx, sourceData, w, h, mo
     const solid = hexToRgb(elements.bleedColor.value);
     for (let y = 0; y < totalH; y++) {
         for (let x = 0; x < totalW; x++) {
-            const ix = x - bleedPx, iy = y - bleedPx;
+            const ix = x - pad.left, iy = y - pad.top;
             if (ix >= 0 && ix < w && iy >= 0 && iy < h) continue;
             const o = (y * totalW + x) * 4;
             if (mode === 'solid') {

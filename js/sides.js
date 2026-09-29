@@ -1,6 +1,6 @@
-// Corner and side removal helpers.
-// These punch transparent holes into a copy of the source pixel data; the holes are
-// later patched by fillTransparentPixels() (see edge.js) before the bleed border is drawn.
+// Corner removal: punches transparent holes into a copy of the source pixel
+// data; the holes are patched by fillTransparentPixels() (see edge.js) before
+// the bleed is drawn. (Removed edges are cut off instead: see addBleedToCard.)
 
 // Remove pixels from the four corners using circular arc algorithm
 // Circle center is inside the card at (radius, radius) from corner
@@ -32,53 +32,6 @@ function removeWhiteCorners(sourceData, w, h, cornerSize) {
                     const idx = (y * w + x) * 4;
                     processed[idx + 3] = 0; // Make transparent
                 }
-            }
-        }
-    }
-
-    return processed;
-}
-
-// Remove pixels from sides based on width/height
-function removeSides(sourceData, w, h, leftWidth, rightWidth, topHeight, bottomHeight) {
-    const processed = new Uint8ClampedArray(sourceData);
-
-    // Remove left side
-    if (leftWidth > 0) {
-        for (let y = 0; y < h; y++) {
-            for (let x = 0; x < Math.min(leftWidth, w); x++) {
-                const idx = (y * w + x) * 4;
-                processed[idx + 3] = 0; // Make transparent
-            }
-        }
-    }
-
-    // Remove right side
-    if (rightWidth > 0) {
-        for (let y = 0; y < h; y++) {
-            for (let x = Math.max(0, w - rightWidth); x < w; x++) {
-                const idx = (y * w + x) * 4;
-                processed[idx + 3] = 0; // Make transparent
-            }
-        }
-    }
-
-    // Remove top side
-    if (topHeight > 0) {
-        for (let y = 0; y < Math.min(topHeight, h); y++) {
-            for (let x = 0; x < w; x++) {
-                const idx = (y * w + x) * 4;
-                processed[idx + 3] = 0; // Make transparent
-            }
-        }
-    }
-
-    // Remove bottom side
-    if (bottomHeight > 0) {
-        for (let y = Math.max(0, h - bottomHeight); y < h; y++) {
-            for (let x = 0; x < w; x++) {
-                const idx = (y * w + x) * 4;
-                processed[idx + 3] = 0; // Make transparent
             }
         }
     }
