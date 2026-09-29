@@ -116,10 +116,6 @@ function pngName(name) {
     return `${PnP.baseName(name)}_bleed.png`;
 }
 
-function processAll() {
-    return state.images.map((_, i) => processCard(i));
-}
-
 // Render thumbnail previews
 function renderThumbnails() {
     elements.thumbnailsContainer.innerHTML = '';
@@ -260,44 +256,41 @@ function updateInfoGrid() {
     elements.infoGrid.style.display = 'grid';
 }
 
+// Card i with bleed as a PNG, stamped with its DPI (from the card size), so
+// Layout and other apps print it at the right size.
+async function cardBlob(i) {
+    const blob = await PnP.canvasToBlob(processCard(i));
+    return PnP.setImageDpi(blob, pxPerMmFor(state.images[i].canvas) * 25.4);
+}
+
 // Download current processed card
-elements.downloadBtn.addEventListener('click', () => {
+elements.downloadBtn.addEventListener('click', async () => {
     const img = state.images[state.selectedIndex];
     if (!img) {
         updateStatus('No processed card to download', 'error');
         return;
     }
-    const processed = processCard(state.selectedIndex);
-    PnP.canvasToBlob(processed).then((blob) => {
-        PnP.downloadBlob(blob, pngName(img.file.name));
-        updateStatus('Card downloaded!', 'success');
-    });
+    PnP.downloadBlob(await cardBlob(state.selectedIndex), pngName(img.file.name));
+    updateStatus('Card downloaded!', 'success');
 });
 
-// Download all processed cards
+// Download all processed cards. Cards are encoded one at a time and only the
+// one on screen stays in memory.
 elements.downloadAllBtn.addEventListener('click', async () => {
-    const remaining = state.images.filter((img, idx) => !state.processedCards[idx]).length;
-    if (remaining > 0) {
-        updateStatus(`Processing ${remaining} remaining card(s)...`, 'info');
-        elements.downloadAllBtn.disabled = true;
-        await new Promise((r) => setTimeout(r, 0)); // let the status paint
-        processAll();
-    }
-
-    // Create ZIP file with all processed cards
+    if (!state.images.length) return;
+    elements.downloadAllBtn.disabled = true;
     try {
-        const zip = new JSZip();
-
+        const entries = [];
         for (let i = 0; i < state.images.length; i++) {
-            const canvas = state.processedCards[i];
-            if (canvas) {
-                const dataUrl = canvas.toDataURL('image/png');
-                const base64 = dataUrl.split(',')[1];
-                zip.file(pngName(state.images[i].file.name), base64, { base64: true });
+            updateStatus(`Processing card ${i + 1} of ${state.images.length}...`, 'info');
+            await new Promise((r) => setTimeout(r, 0)); // let the status paint
+            entries.push({ name: pngName(state.images[i].file.name), data: await cardBlob(i) });
+            if (i !== state.selectedIndex) {
+                delete state.processedCards[i];
+                state.images[i].processed = null;
             }
         }
-
-        const blob = await zip.generateAsync({ type: 'blob' });
+        const blob = await PnP.zip.create(entries);
         PnP.downloadBlob(blob, PnP.outputName(state.images.map((img) => img.file), 'bleed.zip', 'cards-with-bleed.zip'));
 
         elements.downloadAllBtn.disabled = false;
@@ -430,12 +423,11 @@ PnP.dropzone(document.getElementById('dropZone'), {
 
 
 async function processedItems() {
-    processAll();
-    return Promise.all(state.images.map(async (img, i) => ({
-        name: pngName(img.file.name),
-        blob: await PnP.canvasToBlob(state.processedCards[i]),
-        role: img.file.pnpRole,
-    })));
+    const items = [];
+    for (let i = 0; i < state.images.length; i++) {
+        items.push({ name: pngName(state.images[i].file.name), blob: await cardBlob(i), role: state.images[i].file.pnpRole });
+    }
+    return items;
 }
 
 const sendMenu = PnP.sendMenu(document.getElementById('sendSlot'), {
