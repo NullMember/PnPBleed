@@ -48,6 +48,7 @@ async function loadFiles(files) {
     const failed = [];
     for (const file of files) {
         const canvas = await imageToCanvas(file);
+        if (canvas) canvas.dpi = await PnP.readImageDpi(file); // null when the file doesn't say
         if (canvas) state.images.push({ file, canvas, thumb: thumbnailOf(canvas), processed: null });
         else failed.push(file.name);
     }
@@ -108,20 +109,26 @@ function imageToCanvas(file) {
     });
 }
 
-// Pixels per mm of an image, given the entered card (trim) size
+// Pixels per mm of an image, given the entered card (trim) size. Shapes
+// have no card size: they use the DPI their file records, when it does.
 function pxPerMmFor(canvas) {
+    if (elements.bleedMode.value === 'shape' && canvas.dpi) return canvas.dpi / 25.4;
     const cardWidthMm = parseFloat(elements.cardWidthInput.value) || 63;
     const cardHeightMm = parseFloat(elements.cardHeightInput.value) || 88;
     return mmToPixels(1, cardWidthMm, cardHeightMm, canvas.width, canvas.height);
 }
 
 // Build (or reuse) the bled version of card i
+// The bleed in an image's pixels (whole pixels, as it is drawn)
+function bleedPxFor(canvas) {
+    return Math.round((parseFloat(elements.bleedInput.value) || 0) * pxPerMmFor(canvas));
+}
+
 function processCard(i) {
     const img = state.images[i];
     if (img.processed) return img.processed;
     const pxPerMm = pxPerMmFor(img.canvas);
-    const bleedMm = parseFloat(elements.bleedInput.value) || 0;
-    const processed = addBleedToCard(img.canvas, Math.round(bleedMm * pxPerMm), pxPerMm);
+    const processed = addBleedToCard(img.canvas, bleedPxFor(img.canvas), pxPerMm);
     img.processed = processed;
     return processed;
 }
@@ -246,7 +253,8 @@ async function updateProcessedPreview() {
         ctx.drawImage(processedCanvas, 0, 0, canvas.width, canvas.height);
 
         // Where the card will be cut: the original image's edges
-        if (elements.showTrimLine.checked) {
+        // (A shape's cut line is its outline, which the preview already shows.)
+        if (elements.showTrimLine.checked && elements.bleedMode.value !== 'shape') {
             const bleedPx = (processedCanvas.width - img.canvas.width) / 2;
             ctx.save();
             ctx.setLineDash([6, 4]);
@@ -284,11 +292,14 @@ function updateInfoGrid() {
     elements.infoGrid.style.display = 'grid';
 }
 
-// Card i with bleed as a PNG, stamped with its DPI (from the card size), so
-// Layout and other apps print it at the right size.
+// Card i with bleed as a PNG, stamped with its DPI (from the card size) and
+// the bleed added ("PnPTools:bleed", mm), so Layout finds the card inside it.
 async function cardBlob(i) {
     const blob = await PnP.canvasToBlob(processCard(i));
-    return PnP.setImageDpi(blob, pxPerMmFor(state.images[i].canvas) * 25.4);
+    const pxPerMm = pxPerMmFor(state.images[i].canvas);
+    const bleedMm = Math.round(bleedPxFor(state.images[i].canvas) / pxPerMm * 1000) / 1000;
+    const stamped = await PnP.setImageDpi(blob, pxPerMm * 25.4);
+    return PnP.setPngText(stamped, 'PnPTools:bleed', String(bleedMm));
 }
 
 // Download current processed card
@@ -366,6 +377,7 @@ const BLEED_MODE_HINTS = {
     extend: 'Best for flat borders and frames.',
     mirror: 'Best for full-bleed artwork and photos.',
     solid: 'Fills the bleed with one colour, e.g. a black card border.',
+    shape: 'For tokens, coins and other shapes on a transparent background: the bleed follows the outline. Images that record their DPI (from CardCrop, Layout…) are measured by it; others take the card size as the whole image. Corner and edge removal are not used.',
 };
 
 function updateBleedModeUI() {

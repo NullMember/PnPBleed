@@ -17,6 +17,9 @@ function mmToPixels(mm, cardWidthMm, cardHeightMm, imageWidth, imageHeight) {
 // Add bleed to card by extending edge gradients. Corner/edge trims are entered
 // in mm and converted with pxPerMm (the image's resolution at card size).
 function addBleedToCard(sourceCanvas, bleedPx, pxPerMm) {
+    // Shaped pieces get bleed around their outline; corner and edge removal
+    // are for rectangular cards.
+    if (elements.bleedMode.value === 'shape') return addShapeBleed(sourceCanvas, bleedPx);
     const w = sourceCanvas.width;
     const h = sourceCanvas.height;
     const totalW = w + 2 * bleedPx;
