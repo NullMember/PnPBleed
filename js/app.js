@@ -3,10 +3,8 @@
 
 // Store uploaded images and processed results
 const state = {
-    images: [], // { file, canvas, processed }
+    images: [], // { file, canvas, thumb, processed } — processed is the cached card with bleed
     selectedIndex: 0,
-    dpiDetected: false,
-    processedCards: {}
 };
 
 const elements = {
@@ -39,34 +37,53 @@ const elements = {
 
 const DEFAULT_DPI = 300;
 
-// Load a new batch of card images (replaces the current batch)
+// Add card images after the ones already loaded. Files that can't be read
+// are reported and skipped; the cards already there are kept.
 async function loadFiles(files) {
     files = Array.from(files).filter((f) => f.type.startsWith('image/'));
     if (files.length === 0) return;
 
-    state.images = [];
-    state.selectedIndex = 0;
-    state.processedCards = {};
-
     updateStatus('Loading images...', 'info');
-
+    const firstNew = state.images.length;
+    const failed = [];
     for (const file of files) {
         const canvas = await imageToCanvas(file);
-        if (canvas) {
-            state.images.push({ file, canvas, processed: null });
-        }
+        if (canvas) state.images.push({ file, canvas, thumb: thumbnailOf(canvas), processed: null });
+        else failed.push(file.name);
     }
 
-    if (state.images.length > 0) {
-        renderThumbnails();
-        selectCard(0);
-        elements.downloadBtn.disabled = false;
-        elements.downloadAllBtn.disabled = false;
-        sendMenu.setEnabled(true);
-        elements.detectBorderBtn.disabled = false;
-        updateStatus(`Loaded ${state.images.length} image(s)`, 'success');
+    const added = state.images.length - firstNew;
+    if (added) state.selectedIndex = firstNew;
+    cardsChanged();
+    if (failed.length) {
+        updateStatus(`Could not read ${failed.join(', ')}${added ? ` · loaded ${added} other image(s)` : ''}.`, 'error');
     } else {
-        updateStatus('Failed to load images', 'error');
+        updateStatus(`Loaded ${added} image(s)`, 'success');
+    }
+}
+
+function removeCard(index) {
+    state.images.splice(index, 1);
+    if (state.selectedIndex >= index && state.selectedIndex > 0) state.selectedIndex--;
+    cardsChanged();
+    updateStatus(state.images.length ? `${state.images.length} card(s) left.` : 'All cards removed.', 'info');
+}
+
+// After cards are added or removed: thumbnails, previews and buttons.
+function cardsChanged() {
+    const any = state.images.length > 0;
+    state.selectedIndex = Math.min(state.selectedIndex, Math.max(0, state.images.length - 1));
+    elements.downloadBtn.disabled = !any;
+    elements.downloadAllBtn.disabled = !any;
+    elements.detectBorderBtn.disabled = !any;
+    sendMenu.setEnabled(any);
+    renderThumbnails();
+    if (any) {
+        updatePreviews();
+    } else {
+        elements.originalContainer.innerHTML = '';
+        elements.processedContainer.innerHTML = '';
+        elements.infoGrid.style.display = 'none';
     }
 }
 
@@ -100,13 +117,12 @@ function pxPerMmFor(canvas) {
 
 // Build (or reuse) the bled version of card i
 function processCard(i) {
-    if (state.processedCards[i]) return state.processedCards[i];
     const img = state.images[i];
+    if (img.processed) return img.processed;
     const pxPerMm = pxPerMmFor(img.canvas);
     const bleedMm = parseFloat(elements.bleedInput.value) || 0;
     const processed = addBleedToCard(img.canvas, Math.round(bleedMm * pxPerMm), pxPerMm);
     img.processed = processed;
-    state.processedCards[i] = processed;
     return processed;
 }
 
@@ -133,28 +149,40 @@ function renderThumbnails() {
     state.images.forEach((img, index) => {
         const thumbnail = document.createElement('div');
         thumbnail.className = 'thumbnail' + (index === state.selectedIndex ? ' active' : '');
-
-        const canvas = document.createElement('canvas');
-        const size = 100;
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-
-        // Scale down image to fit thumbnail
-        const scale = Math.min(size / img.canvas.width, size / img.canvas.height);
-        const scaledW = img.canvas.width * scale;
-        const scaledH = img.canvas.height * scale;
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, size, size);
-        ctx.drawImage(img.canvas, (size - scaledW) / 2, (size - scaledH) / 2, scaledW, scaledH);
-
+        thumbnail.title = img.file.name;
         thumbnail.addEventListener('click', () => selectCard(index));
-
-        const dataUrl = canvas.toDataURL();
-        thumbnail.innerHTML = `<img src="${dataUrl}" alt="Card ${index + 1}">`;
-
+        const image = document.createElement('img');
+        image.src = img.thumb;
+        image.alt = img.file.name;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'thumbnail-remove';
+        remove.title = 'Remove this card';
+        remove.setAttribute('aria-label', `Remove ${img.file.name}`);
+        remove.textContent = '✕';
+        remove.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeCard(index);
+        });
+        thumbnail.append(image, remove);
         elements.thumbnailsContainer.appendChild(thumbnail);
     });
+}
+
+// A small preview of a card, made once when it's loaded.
+function thumbnailOf(source) {
+    const size = 100;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const scale = Math.min(size / source.width, size / source.height);
+    const w = source.width * scale;
+    const h = source.height * scale;
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, size, size);
+    ctx.drawImage(source, (size - w) / 2, (size - h) / 2, w, h);
+    return canvas.toDataURL();
 }
 
 // Select a card and update preview
@@ -285,10 +313,7 @@ elements.downloadAllBtn.addEventListener('click', async () => {
             updateStatus(`Processing card ${i + 1} of ${state.images.length}...`, 'info');
             await new Promise((r) => setTimeout(r, 0)); // let the status paint
             entries.push({ name: pngName(state.images[i].file.name), data: await cardBlob(i) });
-            if (i !== state.selectedIndex) {
-                delete state.processedCards[i];
-                state.images[i].processed = null;
-            }
+            if (i !== state.selectedIndex) state.images[i].processed = null;
         }
         const blob = await PnP.zip.create(entries);
         PnP.downloadBlob(blob, PnP.outputName(state.images.map((img) => img.file), 'bleed.zip', 'cards-with-bleed.zip'));
@@ -311,7 +336,6 @@ function updateStatus(message, type = 'info') {
 // preview after a short pause; the enable checkboxes toggle their inputs.
 let reprocessTimer = null;
 function reprocess() {
-    state.processedCards = {};
     state.images.forEach(img => img.processed = null);
     clearTimeout(reprocessTimer);
     reprocessTimer = setTimeout(() => {
@@ -445,7 +469,12 @@ PnP.init({
     tool: 'PnPBleed',
     project: {
         getFiles: () => state.images.map((img) => ({ name: img.file.name, blob: img.file, role: img.file.pnpRole })),
-        setFiles: (files) => loadFiles(files),
+        // Opening a project replaces the cards.
+        setFiles: (files) => {
+            state.images = [];
+            state.selectedIndex = 0;
+            return loadFiles(files);
+        },
     },
     hasUnsavedWork: () => state.images.length > 0,
 });
